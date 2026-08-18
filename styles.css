@@ -68,11 +68,12 @@ h2 {
   padding: 6px 0;
   text-decoration: none;
   color: var(--tekst-lys);
-  font-size: 0.7rem;
+  font-size: 0.62rem;
   border-radius: 10px;
+  white-space: nowrap;
 }
 
-.navlink span { font-size: 1.3rem; }
+.navlink span { font-size: 1.2rem; }
 .navlink.aktiv { color: var(--bordo); background: rgba(107,16,48,0.08); }
 
 /* ---------- Statistikk ---------- */

@@ -52,16 +52,18 @@ Alle viner lagres i nettleserens IndexedDB **på den ene enheten/nettleseren** d
 
 ## Funksjoner
 
-- Registrer viner med produsent, årgang, type, land/region, druer, antall flasker, volum, innkjøpspris/-dato
-- Lagringsinfo: sted, **lagringstemperatur** og **serveringstemperatur** hver for seg, fuktighet, drikkeklar-vindu (fra/til år) — med automatiske forslag basert på vintype som du kan overstyre
+- **To kategorier**: egne faner for 🍷 Vin og 🥃 Brennevin, med hver sin typeliste (vin: rødvin/hvitvin/musserende osv., brennevin: whisky/vodka/gin/rom/cognac/akevitt/tequila/likør) og egne lagrings-/serveringsforslag tilpasset hver type
+- Registrer produsent, årgang, type, land/region, druer, antall flasker, volum, pris per flaske, innkjøpsdato
+- **Verdi**: hvert produkt viser total verdi (antall × pris) på detaljsiden, i tillegg til samlet estimert verdi på oversikten
+- Lagringsinfo: sted, **lagringstemperatur** og **serveringstemperatur** hver for seg, fuktighet (kun vin), drikkeklar-vindu (fra/til år) — med automatiske forslag basert på type som du kan overstyre
 - Matpar: velg blant faste kategorier (rødt kjøtt, fisk, ost, osv.) + eget fritekstfelt
 - Smaksnotater og stjernevurdering
 - Bilde av etiketten (bruker telefonens kamera direkte)
-- Søk og filtrering (type, matpar, drikkestatus)
-- Dashboard som varsler om viner som bør drikkes snart eller er "på hell"
-- **Drikkehistorikk**: «🍾 Merk som drukket» på en vin flytter den ut av kjeller-tellingene og over i en egen historikk-liste (Viner → «Drukket»), med dato for når den ble tatt ut. Kan angres med «Legg tilbake i kjelleren».
+- Søk og filtrering (type, matpar, drikkestatus) innen hver kategori
+- Dashboard som varsler om produkter som bør drikkes snart eller er "på hell"
+- **Drikkehistorikk**: «🍾 Merk som drukket» flytter et produkt ut av kjeller-tellingene og over i en egen historikk-liste (fanens «Drukket»-visning), med dato for når det ble tatt ut. Kan angres med «Legg tilbake i kjelleren».
 - Eksport/import for sikkerhetskopi — filimport støtter å velge **flere JSON-filer samtidig**
-- **Legg til viner med AI**: Legg til-fanen → «Kopier AI-mal» gir deg en ferdig prompt du kan lime inn i Claude/ChatGPT sammen med et bilde av etiketten. Lim AI-ens JSON-svar tilbake i feltet — ett vinobjekt fyller ut skjemaet for gjennomsyn før lagring, en hel liste med viner importeres rett inn. Hopper stille over eventuelle poster som mangler navn.
+- **Legg til med AI**: Legg til-fanen → «Kopier AI-mal» gir deg en ferdig prompt du kan lime inn i Claude/ChatGPT sammen med et bilde av etiketten — malen dekker både vin og brennevin, og AI-en velger riktig kategori selv. Lim AI-ens JSON-svar tilbake i feltet — ett objekt fyller ut skjemaet for gjennomsyn før lagring (og bytter fane automatisk om det er brennevin), en hel liste importeres rett inn. Hopper stille over eventuelle poster som mangler navn.
 
 ## Kjent begrensning i denne test-forhåndsvisningen
 

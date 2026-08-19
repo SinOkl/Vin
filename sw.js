@@ -1,10 +1,13 @@
-const CACHE_NAVN = 'vinkjeller-v8';
+const CACHE_NAVN = 'vinkjeller-v12';
 const APP_SHELL = [
   './',
   './index.html',
   './styles.css',
   './app.js',
   './db.js',
+  './auth.js',
+  './firebase-init.js',
+  './firebase-config.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -26,6 +29,12 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+
+  // La alt utenfor vår egen origin (Firebase Auth, Firestore, gstatic-CDN-en SDK-en
+  // lastes fra) gå helt uinnblandet til nettverket — vi cacher kun selve app-skallet.
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
+
   event.respondWith(
     caches.match(event.request).then((cached) => {
       const nettverk = fetch(event.request)

@@ -1,6 +1,6 @@
 # Vinkjelleren
 
-En enkel app for å holde oversikt over vinene i vinkjelleren din: lagring (temperatur/fuktighet), drikkevindu, matpar og smaksnotater. Bygget som en installerbar nettapp (PWA) — ingen Google Play nødvendig, og alle data lagres kun lokalt på telefonen din.
+En enkel app for å holde oversikt over vin og brennevin i kjelleren din: lagring (temperatur/fuktighet), drikkevindu, matpar og smaksnotater. Bygget som en installerbar nettapp (PWA) — ingen Google Play nødvendig. Fra v2.0 deles dataene via Firebase, slik at flere kan logge inn og se/redigere samme kjeller sammen.
 
 Ingen Node.js, Python eller andre utviklerverktøy trengs for å bruke eller endre appen — det er ren HTML/CSS/JavaScript.
 
@@ -44,11 +44,12 @@ Når du endrer appen senere (f.eks. ber meg legge til flere felt), last opp de e
 
 ## Om dataene dine
 
-Alle viner lagres i nettleserens IndexedDB **på den ene enheten/nettleseren** du bruker — de sendes ikke til noen server. Det betyr:
+Fra og med v2.0 lagres vin/brennevin i Firebase (Firestore), delt mellom alle medlemmer av samme "kjeller". Du logger inn med Google, og oppretter eller blir med i en kjeller via en invitasjonskode. Det betyr:
 
-- Data forsvinner ikke mellom økter, men følger ikke med hvis du bytter telefon eller sletter nettleserdata.
-- Bruk **Innstillinger → Eksporter til fil** jevnlig for å ta sikkerhetskopi (en `.json`-fil).
-- **Innstillinger → Importer fra fil** kan lese den samme filen tilbake inn, f.eks. på en ny telefon.
+- Data følger kontoen din — bytter du telefon, logger du bare inn på nytt.
+- Endringer andre medlemmer gjør (legger til, drikker, redigerer) dukker opp hos deg i sanntid.
+- Bruk fortsatt **Innstillinger → Eksporter til fil** innimellom som en ekstra sikkerhetskopi.
+- Se `firestore.rules` for hvordan tilgangen er begrenset til kjellerens egne medlemmer.
 
 ## Funksjoner
 

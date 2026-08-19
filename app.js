@@ -1,4 +1,5 @@
-import { VinDB } from './db.js';
+import { VinDB, KjellerDB } from './db.js';
+import { loggInnMedGoogle, loggUt, paInnloggingsendring } from './auth.js';
 
 // ---------- Konstanter ----------
 
@@ -76,8 +77,6 @@ Regler:
 - "innkjopspris" er prisen PER FLASKE i kroner. Søk ALLTID opp produktet på vinmonopolet.no og bruk utsalgsprisen derfra — ikke la dette feltet stå tomt bare fordi prisen ikke står på etiketten. Oppgir jeg selv en annen pris i meldingen (f.eks. faktisk betalt pris, tilbud, eller kjøpt i utlandet), bruk min pris i stedet for Vinmonopolet sin. Finner du ikke produktet på Vinmonopolet i det hele tatt, skriv "" — ikke gjett et tall.
 - Bruk nettsøk til å dobbeltsjekke fakta om produktet (druer, region, drikkevindu, smaksprofil, pris) fremfor å basere deg kun på synlig tekst på etiketten — det gir mer presise svar.
 - Har du ikke tilgang til nettsøk i det hele tatt: gjør så godt du kan ut fra bildet/beskrivelsen og din egen kunnskap, og skriv "" på felt (inkludert innkjopspris) du er usikker på — ikke gjett blindt.
-- drikkeklarFra/drikkeklarTil er årstall (f.eks. 2026); for brennevin kan disse ofte stå tomme siden det sjelden er en «drikk innen»-frist.
-- Skal du registrere flere flasker samtidig: svar med en JSON-liste av slike objekter i stedet for ett enkelt objekt.
 
 Her er flasken: [lim inn bilde av etiketten, eller beskriv den (navn, produsent, årgang) her]`;
 
@@ -197,7 +196,7 @@ function normaliserImportertVin(raw) {
   };
 }
 
-// Tar imot rå JSON-tekst (ett objekt eller en liste), validerer og lagrer gyldige poster.
+// Tar imot rå JSON-tekst (ett objekt eller en liste), validerer og lagrer gyldige poster i aktiv kjeller.
 async function importerFraJsonTekst(tekst) {
   let data;
   try {
@@ -217,24 +216,44 @@ async function importerFraJsonTekst(tekst) {
   if (!gyldige.length) {
     throw new Error('Fant ingen gyldige poster i JSON-en (mangler "navn"-felt?).');
   }
-  const antall = await VinDB.importer(gyldige);
+  const antall = await VinDB.importer(aktivKjeller.id, gyldige);
   return { antall, hoppetOver };
 }
 
 // ---------- App-state ----------
 
+let bruker = null;
+let mineKjellere = [];
+let aktivKjeller = null;
 let alleViner = [];
+let vinerAvslutt = null; // avslutter aktivt Firestore-abonnement ved kjellerbytte
 const app = document.getElementById('app');
+const bunnav = document.querySelector('.bunnav');
 
-async function lastViner() {
-  alleViner = await VinDB.alle();
-  alleViner.sort((a, b) => (a.navn || '').localeCompare(b.navn || '', 'nb'));
+function visBunnav(vis) {
+  bunnav.style.display = vis ? '' : 'none';
 }
 
 // ---------- Routing ----------
 
-async function rute() {
-  await lastViner();
+function rute() {
+  try {
+    ruteIndre();
+  } catch (err) {
+    console.error('[vinkjeller] Feil under visning:', err);
+    app.innerHTML = '';
+    app.appendChild(el(`
+      <div class="side">
+        <h1>Noe gikk galt</h1>
+        <p class="tom">${escapeHtml(err.message || String(err))}</p>
+        <div class="knapperad"><button class="knapp knapp-primaer" id="prov-igjen-knapp-rute">Prøv igjen</button></div>
+      </div>
+    `));
+    document.getElementById('prov-igjen-knapp-rute').addEventListener('click', () => location.reload());
+  }
+}
+
+function ruteIndre() {
   const hash = location.hash || '#/';
   const [, path, param] = hash.match(/^#\/?([^/]*)\/?([^/]*)$/) || [];
 
@@ -253,13 +272,13 @@ async function rute() {
     settAktivNav(param === 'brennevin' ? '#/brennevin' : '#/viner');
     visSkjema(null, param === 'brennevin' ? 'Brennevin' : 'Vin');
   } else if (path === 'rediger' && param) {
-    const post = alleViner.find((x) => x.id === Number(param));
+    const post = alleViner.find((x) => x.id === param);
     settAktivNav(post && post.kategori === 'Brennevin' ? '#/brennevin' : '#/viner');
-    visSkjema(Number(param));
+    visSkjema(param);
   } else if (path === 'vin' && param) {
-    const post = alleViner.find((x) => x.id === Number(param));
+    const post = alleViner.find((x) => x.id === param);
     settAktivNav(post && post.kategori === 'Brennevin' ? '#/brennevin' : '#/viner');
-    visDetalj(Number(param));
+    visDetalj(param);
   } else if (path === 'innstillinger') {
     settAktivNav('#/innstillinger');
     visInnstillinger();
@@ -274,6 +293,139 @@ function settAktivNav(href) {
 }
 
 window.addEventListener('hashchange', rute);
+
+// ---------- Innlogging og kjeller-oppstart ----------
+
+function abonnerPaAktivKjeller() {
+  if (vinerAvslutt) vinerAvslutt();
+  app.innerHTML = '<div class="side"><p class="tom">Laster kjelleren…</p></div>';
+  vinerAvslutt = VinDB.abonner(aktivKjeller.id, (liste) => {
+    alleViner = liste.sort((a, b) => (a.navn || '').localeCompare(b.navn || '', 'nb'));
+    rute();
+  });
+}
+
+function byttAktivKjeller(kjellerId) {
+  aktivKjeller = mineKjellere.find((k) => k.id === kjellerId);
+  if (!aktivKjeller) return;
+  localStorage.setItem('vinkjeller-aktiv-kjeller', kjellerId);
+  visBunnav(true);
+  location.hash = '#/';
+  abonnerPaAktivKjeller();
+}
+
+async function lastKjellereOgStart() {
+  mineKjellere = await KjellerDB.hentMine();
+  if (!mineKjellere.length) {
+    visBunnav(false);
+    visKjellerOnboarding();
+    return;
+  }
+  const lagretId = localStorage.getItem('vinkjeller-aktiv-kjeller');
+  aktivKjeller = mineKjellere.find((k) => k.id === lagretId) || mineKjellere[0];
+  visBunnav(true);
+  abonnerPaAktivKjeller();
+}
+
+paInnloggingsendring((innloggetBruker) => {
+  console.log('[vinkjeller] innloggingsstatus endret:', innloggetBruker ? innloggetBruker.uid : 'utlogget');
+  bruker = innloggetBruker;
+  if (vinerAvslutt) { vinerAvslutt(); vinerAvslutt = null; }
+
+  if (!bruker) {
+    visBunnav(false);
+    visInnlogging();
+    return;
+  }
+
+  visBunnav(false);
+  app.innerHTML = '<div class="side"><p class="tom">Logger inn…</p></div>';
+  lastKjellereOgStart().catch((err) => {
+    console.error('[vinkjeller] Feil ved oppstart etter innlogging:', err);
+    app.innerHTML = '';
+    app.appendChild(el(`
+      <div class="side">
+        <h1>Noe gikk galt</h1>
+        <p class="tom">${escapeHtml(err.message || String(err))}</p>
+        <div class="knapperad"><button class="knapp knapp-primaer" id="prov-igjen-knapp">Prøv igjen</button></div>
+      </div>
+    `));
+    document.getElementById('prov-igjen-knapp').addEventListener('click', () => location.reload());
+  });
+});
+
+function visInnlogging() {
+  app.innerHTML = '';
+  app.appendChild(el(`
+    <div class="side innlogging-side">
+      <div class="innlogging-boks">
+        <div class="innlogging-ikon">🍷</div>
+        <h1>Vinkjelleren</h1>
+        <p class="hjelpetekst">Logg inn for å se og dele vinkjelleren med de du inviterer.</p>
+        <button class="knapp knapp-primaer" id="google-logg-inn-knapp">Logg inn med Google</button>
+      </div>
+    </div>
+  `));
+  document.getElementById('google-logg-inn-knapp').addEventListener('click', async () => {
+    try {
+      await loggInnMedGoogle();
+    } catch (err) {
+      alert('Kunne ikke logge inn: ' + err.message);
+    }
+  });
+}
+
+function visKjellerOnboarding() {
+  const fornavn = (bruker.displayName || '').split(' ')[0] || 'Min';
+  app.innerHTML = '';
+  app.appendChild(el(`
+    <div class="side">
+      <h1>Velkommen, ${escapeHtml(bruker.displayName || '')}!</h1>
+      <p class="hjelpetekst">Du er ikke medlem av noen kjeller ennå. Opprett en ny, eller bli med i en du har fått invitasjonskode til.</p>
+
+      <section class="detaljseksjon">
+        <h2>Opprett ny kjeller</h2>
+        <label>Navn på kjelleren<input id="ny-kjeller-navn" placeholder="${escapeHtml(fornavn)} sin kjeller"></label>
+        <div class="knapperad">
+          <button class="knapp knapp-primaer" id="opprett-kjeller-knapp">Opprett</button>
+        </div>
+      </section>
+
+      <section class="detaljseksjon">
+        <h2>Bli med i en kjeller</h2>
+        <label>Invitasjonskode<input id="bli-med-kode" placeholder="f.eks. A3F9K2"></label>
+        <div class="knapperad">
+          <button class="knapp knapp-primaer" id="bli-med-knapp">Bli med</button>
+        </div>
+      </section>
+
+      <div class="knapperad">
+        <button class="knapp" id="logg-ut-knapp-onboarding">Logg ut</button>
+      </div>
+    </div>
+  `));
+
+  document.getElementById('opprett-kjeller-knapp').addEventListener('click', async () => {
+    const navn = document.getElementById('ny-kjeller-navn').value.trim();
+    const ny = await KjellerDB.opprett(navn || `${fornavn} sin kjeller`);
+    mineKjellere.push(ny);
+    byttAktivKjeller(ny.id);
+  });
+
+  document.getElementById('bli-med-knapp').addEventListener('click', async () => {
+    const kode = document.getElementById('bli-med-kode').value.trim();
+    if (!kode) { alert('Skriv inn koden du har fått.'); return; }
+    try {
+      const kjeller = await KjellerDB.bliMedViaKode(kode);
+      mineKjellere.push(kjeller);
+      byttAktivKjeller(kjeller.id);
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+
+  document.getElementById('logg-ut-knapp-onboarding').addEventListener('click', () => loggUt());
+}
 
 // ---------- Visning: Oversikt ----------
 
@@ -294,13 +446,13 @@ function visOversikt() {
   app.innerHTML = '';
   app.appendChild(el(`
     <div class="side">
-      <h1>🍷 Vinkjelleren</h1>
+      <h1>🍷 ${escapeHtml(aktivKjeller.navn)}</h1>
       <div class="statgrid">
         <div class="statkort"><span class="stattall">${unikeProdukter}</span><span class="statlabel">produkter</span></div>
         <div class="statkort"><span class="stattall">${totalFlasker}</span><span class="statlabel">flasker</span></div>
         <div class="statkort"><span class="stattall">${formatKr(totalVerdi) || '–'}</span><span class="statlabel">est. verdi</span></div>
       </div>
-      ${unikeProdukter ? `<p class="hjelpetekst">🍷 ${vinIKjelleren.length} vin(er) · 🥃 ${brennevinIKjelleren.length} brennevin</p>` : ''}
+      ${unikeProdukter ? `<p class="hjelpetekst">🍷 ${vinIKjelleren.length} vin(er) · 🥃 ${brennevinIKjelleren.length} brennevin · ${(aktivKjeller.medlemmer || []).length} medlem(mer)</p>` : `<p class="hjelpetekst">${(aktivKjeller.medlemmer || []).length} medlem(mer) i denne kjelleren</p>`}
 
       ${hastesak.length ? `
         <section class="varselboks varsel-hastesak">
@@ -319,7 +471,7 @@ function visOversikt() {
         ${klarNa.length ? listeKompakt(klarNa.slice(0, 8)) : '<p class="tom">Ingen produkter er markert som klare akkurat nå.</p>'}
       </section>
 
-      ${unikeProdukter === 0 ? `<p class="tom">Kjelleren er tom. Trykk «Legg til» for å registrere din første vin eller flaske brennevin.</p>` : ''}
+      ${unikeProdukter === 0 ? `<p class="tom">Kjelleren er tom. Trykk «Legg til» for å registrere den første vinen eller flasken brennevin.</p>` : ''}
 
       ${drukket.length ? `<p class="hjelpetekst"><a href="#/viner">🍾 ${drukket.length} i drikkehistorikken →</a></p>` : ''}
     </div>
@@ -446,8 +598,8 @@ function vinkortHtml(v) {
 
 // ---------- Visning: Detalj ----------
 
-async function visDetalj(id) {
-  const v = alleViner.find((x) => x.id === id) || await VinDB.hent(id);
+function visDetalj(id) {
+  const v = alleViner.find((x) => x.id === id);
   if (!v) { location.hash = '#/viner'; return; }
   const kategori = v.kategori || 'Vin';
   const erBrennevin = kategori === 'Brennevin';
@@ -464,7 +616,7 @@ async function visDetalj(id) {
       ${v.bilde ? `<img class="detaljbilde" src="${v.bilde}" alt="">` : ''}
       <h1>${ikon} ${escapeHtml(v.navn)}${v.argang ? ` <span class="argang">${escapeHtml(v.argang)}</span>` : ''}</h1>
       ${v.drukketDato
-        ? `<span class="status-badge status-drukket">🍾 Drukket ${escapeHtml(v.drukketDato)}</span>`
+        ? `<span class="status-badge status-drukket">🍾 Drukket ${escapeHtml(v.drukketDato)}${v.drukketAv ? ' av ' + escapeHtml(v.drukketAv.navn) : ''}</span>`
         : `<span class="status-badge ${status.klasse}">${status.label}</span>`}
 
       <section class="detaljseksjon">
@@ -481,6 +633,7 @@ async function visDetalj(id) {
           ${dRad('Verdi totalt', verdiTotal ? `${formatKr(verdiTotal)}  (${v.antallFlasker} × ${formatKr(v.innkjopspris)})` : '')}
           ${dRad('Kjøpt hos', v.kjoptHos)}
           ${dRad('Innkjøpsdato', v.innkjopsdato)}
+          ${dRad('Lagt til av', v.lagtTilAv?.navn)}
         </dl>
       </section>
 
@@ -524,24 +677,20 @@ async function visDetalj(id) {
   if (drukketKnapp) {
     drukketKnapp.addEventListener('click', async () => {
       const idagIso = new Date().toISOString().slice(0, 10);
-      await VinDB.lagre({ ...v, drukketDato: idagIso });
-      location.hash = '#/vin/' + v.id;
-      rute();
+      await VinDB.lagre(aktivKjeller.id, { ...v, drukketDato: idagIso });
     });
   }
 
   const angreDrukketKnapp = document.getElementById('angre-drukket-knapp');
   if (angreDrukketKnapp) {
     angreDrukketKnapp.addEventListener('click', async () => {
-      await VinDB.lagre({ ...v, drukketDato: '' });
-      location.hash = '#/vin/' + v.id;
-      rute();
+      await VinDB.lagre(aktivKjeller.id, { ...v, drukketDato: '' });
     });
   }
 
   document.getElementById('slett-knapp').addEventListener('click', async () => {
     if (confirm(`Slette «${v.navn}» fra kjelleren?`)) {
-      await VinDB.slett(v.id);
+      await VinDB.slett(aktivKjeller.id, v.id);
       location.hash = tilbakeHref;
     }
   });
@@ -617,8 +766,8 @@ function fyllSkjemaFraVin(skjema, data) {
 
 // ---------- Visning: Skjema (legg til / rediger) ----------
 
-async function visSkjema(id, forhandsvalgtKategori) {
-  const eksisterende = id ? (alleViner.find((x) => x.id === id) || await VinDB.hent(id)) : null;
+function visSkjema(id, forhandsvalgtKategori) {
+  const eksisterende = id ? alleViner.find((x) => x.id === id) : null;
   const kategoriStart = eksisterende ? (eksisterende.kategori || 'Vin') : (forhandsvalgtKategori === 'Brennevin' ? 'Brennevin' : 'Vin');
   const v = eksisterende || {
     kategori: kategoriStart,
@@ -838,7 +987,7 @@ async function visSkjema(id, forhandsvalgtKategori) {
       bilde: bildeData,
     };
     if (eksisterende) nyVin.id = eksisterende.id;
-    const id2 = await VinDB.lagre(nyVin);
+    const id2 = await VinDB.lagre(aktivKjeller.id, nyVin);
     location.hash = `#/vin/${eksisterende ? eksisterende.id : id2}`;
   });
 }
@@ -846,14 +995,38 @@ async function visSkjema(id, forhandsvalgtKategori) {
 // ---------- Visning: Innstillinger ----------
 
 function visInnstillinger() {
+  const erEier = aktivKjeller.eierUid === bruker.uid;
   app.innerHTML = '';
   app.appendChild(el(`
     <div class="side">
       <h1>Innstillinger</h1>
 
       <section class="detaljseksjon">
+        <h2>👥 Kjeller: ${escapeHtml(aktivKjeller.navn)}</h2>
+        <p class="hjelpetekst">${(aktivKjeller.medlemmer || []).length} medlem(mer). Del koden under for å invitere flere.</p>
+        <div class="knapperad">
+          <span class="field invite-kode">${escapeHtml(aktivKjeller.inviteKode)}</span>
+          <button class="knapp" id="kopier-kode-knapp">Kopier kode</button>
+        </div>
+        ${erEier ? `<div class="knapperad"><button class="knapp" id="ny-kode-knapp">Lag ny kode</button></div>` : ''}
+
+        ${mineKjellere.length > 1 ? `
+        <p class="hjelpetekst" style="margin-top:14px;">Bytt kjeller:</p>
+        <div class="knapperad">
+          ${mineKjellere.map((k) => `<button class="knapp ${k.id === aktivKjeller.id ? 'knapp-primaer' : ''}" data-bytt-kjeller="${k.id}">${escapeHtml(k.navn)}</button>`).join('')}
+        </div>` : ''}
+
+        <div class="knapperad" style="margin-top:14px;">
+          <button class="knapp" id="ny-kjeller-knapp">+ Opprett ny kjeller</button>
+          <button class="knapp" id="bli-med-knapp-innst">Bli med via kode</button>
+        </div>
+
+        ${!erEier ? `<div class="knapperad"><button class="knapp knapp-fare" id="forlat-kjeller-knapp">Forlat denne kjelleren</button></div>` : ''}
+      </section>
+
+      <section class="detaljseksjon">
         <h2>Sikkerhetskopi</h2>
-        <p class="hjelpetekst">Alle data lagres kun lokalt på denne telefonen/nettleseren. Eksporter jevnlig for å ta vare på dataene dine.</p>
+        <p class="hjelpetekst">Eksporter jevnlig som en ekstra trygghet, i tillegg til at data ligger delt i skyen.</p>
         <div class="knapperad">
           <button class="knapp knapp-primaer" id="eksporter-knapp">Eksporter til fil</button>
         </div>
@@ -861,24 +1034,92 @@ function visInnstillinger() {
           <input type="file" accept="application/json" id="importer-input" multiple>
         </label>
       </section>
+
+      <section class="detaljseksjon">
+        <h2>Konto</h2>
+        <p class="hjelpetekst">Innlogget som ${escapeHtml(bruker.displayName || bruker.email)}</p>
+        <div class="knapperad">
+          <button class="knapp" id="logg-ut-knapp">Logg ut</button>
+        </div>
+      </section>
+
       <section class="detaljseksjon">
         <h2>Faresone</h2>
         <div class="knapperad">
-          <button class="knapp knapp-fare" id="slett-alt-knapp">Slett alle data</button>
+          <button class="knapp knapp-fare" id="slett-alt-knapp">Slett alle data i denne kjelleren</button>
         </div>
       </section>
       <section class="detaljseksjon">
-        <p class="hjelpetekst">Vinkjelleren v1.0 — dine data forlater aldri denne enheten.</p>
+        <p class="hjelpetekst">Vinkjelleren v2.0 — delt via Firebase, synlig for medlemmene av kjelleren din.</p>
       </section>
     </div>
   `));
 
-  document.getElementById('eksporter-knapp').addEventListener('click', async () => {
-    const data = await VinDB.alle();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  document.getElementById('kopier-kode-knapp').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(aktivKjeller.inviteKode);
+      alert('Koden er kopiert! Del den med de du vil invitere.');
+    } catch {
+      alert(`Kunne ikke kopiere automatisk. Koden er: ${aktivKjeller.inviteKode}`);
+    }
+  });
+
+  const nyKodeKnapp = document.getElementById('ny-kode-knapp');
+  if (nyKodeKnapp) {
+    nyKodeKnapp.addEventListener('click', async () => {
+      if (!confirm('Lage ny kode? Den gamle koden slutter å virke.')) return;
+      const kode = await KjellerDB.nyInviteKode(aktivKjeller.id);
+      aktivKjeller.inviteKode = kode;
+      visInnstillinger();
+    });
+  }
+
+  document.querySelectorAll('[data-bytt-kjeller]').forEach((knapp) => {
+    knapp.addEventListener('click', () => byttAktivKjeller(knapp.dataset.byttKjeller));
+  });
+
+  document.getElementById('ny-kjeller-knapp').addEventListener('click', async () => {
+    const navn = prompt('Navn på den nye kjelleren:');
+    if (navn === null) return;
+    const ny = await KjellerDB.opprett(navn);
+    mineKjellere.push(ny);
+    byttAktivKjeller(ny.id);
+  });
+
+  document.getElementById('bli-med-knapp-innst').addEventListener('click', async () => {
+    const kode = prompt('Invitasjonskode:');
+    if (!kode) return;
+    try {
+      const kjeller = await KjellerDB.bliMedViaKode(kode);
+      if (!mineKjellere.find((k) => k.id === kjeller.id)) mineKjellere.push(kjeller);
+      byttAktivKjeller(kjeller.id);
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+
+  const forlatKnapp = document.getElementById('forlat-kjeller-knapp');
+  if (forlatKnapp) {
+    forlatKnapp.addEventListener('click', async () => {
+      if (!confirm(`Forlate «${aktivKjeller.navn}»? Du mister tilgang til denne kjellerens data.`)) return;
+      const forlattId = aktivKjeller.id;
+      await KjellerDB.forlat(forlattId);
+      mineKjellere = mineKjellere.filter((k) => k.id !== forlattId);
+      if (mineKjellere.length) {
+        byttAktivKjeller(mineKjellere[0].id);
+      } else {
+        aktivKjeller = null;
+        visBunnav(false);
+        visKjellerOnboarding();
+      }
+    });
+  }
+
+  document.getElementById('eksporter-knapp').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(alleViner, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `vinkjeller-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `${aktivKjeller.navn}-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
   });
 
@@ -908,9 +1149,11 @@ function visInnstillinger() {
     if (totalAntall) location.hash = '#/viner';
   });
 
+  document.getElementById('logg-ut-knapp').addEventListener('click', () => loggUt());
+
   document.getElementById('slett-alt-knapp').addEventListener('click', async () => {
-    if (confirm('Sikker på at du vil slette ALLE data (vin og brennevin)? Dette kan ikke angres.')) {
-      await VinDB.slettAlt();
+    if (confirm(`Sikker på at du vil slette ALT (vin og brennevin) i «${aktivKjeller.navn}»? Dette kan ikke angres, og påvirker alle medlemmer.`)) {
+      await VinDB.slettAlt(aktivKjeller.id);
       location.hash = '#/';
     }
   });
@@ -923,5 +1166,3 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
   });
 }
-
-rute();

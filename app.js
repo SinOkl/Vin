@@ -1050,7 +1050,7 @@ function visInnstillinger() {
         </div>
       </section>
       <section class="detaljseksjon">
-        <p class="hjelpetekst">Vinkjelleren v2.0 — delt via Firebase, synlig for medlemmene av kjelleren din.</p>
+        <p class="hjelpetekst">Vinkjelleren — delt via Firebase, synlig for medlemmene av kjelleren din.</p>
       </section>
     </div>
   `));

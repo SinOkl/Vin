@@ -2,13 +2,15 @@ rules_version = '2';
 // Lim inn i Firebase Console → Firestore Database → Rules → Publish.
 //
 // Modell:
+//   invitasjoner/{inviteKode}           { kjellerId }  — kun oppslåbar med eksakt kjent kode, aldri listbar
 //   kjellere/{kjellerId}                { navn, eierUid, inviteKode, medlemmer: [uid, ...], opprettet }
 //   kjellere/{kjellerId}/viner/{vinId}   selve vin-/brennevindataen
 //
-// Alle innloggede kan lese kjeller-metadata (navngir og invitasjonskoder) — nødvendig
-// for at "bli med via kode"-oppslaget skal fungere. Selve vinlisten er derimot kun
-// synlig for medlemmer. Passer for en liten, tillitsfull venne-/familiegruppe — ikke
-// tenkt som hardnet flerbrukers-SaaS-sikkerhet.
+// Kun medlemmer av en kjeller kan lese/liste dens metadata og vinliste — ingen kan
+// bla gjennom andres kjellere. "Bli med via kode"-flyten går via invitasjoner/-
+// samlingen, som kun kan slås opp med eksakt kjent kode (aldri listet ut).
+// Passer for en liten, tillitsfull venne-/familiegruppe — ikke tenkt som hardnet
+// flerbrukers-SaaS-sikkerhet.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -22,28 +24,39 @@ service cloud.firestore {
         request.auth.uid in get(/databases/$(database)/documents/kjellere/$(kjellerId)).data.medlemmer;
     }
 
-    // Sant kun når den eneste endringen er at innlogget bruker legger til seg selv i medlemmer-lista.
+    // Sant kun når medlemmer-lista endres ved at innlogget bruker legger til akkurat
+    // seg selv, uten at noe annet i lista eller resten av dokumentet endres.
     function kunLaTilSegSelv(gammel, ny) {
-      return ny.medlemmer.size() == gammel.medlemmer.size() + 1 &&
-        !(request.auth.uid in gammel.medlemmer) &&
-        (request.auth.uid in ny.medlemmer) &&
+      return ny.medlemmer.removeAll(gammel.medlemmer) == [request.auth.uid] &&
+        gammel.medlemmer.removeAll(ny.medlemmer).size() == 0 &&
         ny.navn == gammel.navn &&
         ny.eierUid == gammel.eierUid &&
         ny.inviteKode == gammel.inviteKode;
     }
 
-    // Sant kun når den eneste endringen er at innlogget bruker fjerner seg selv (forlater kjelleren).
+    // Sant kun når medlemmer-lista endres ved at innlogget bruker fjerner akkurat
+    // seg selv (forlater kjelleren), uten at noe annet endres.
     function kunFjernetSegSelv(gammel, ny) {
-      return ny.medlemmer.size() == gammel.medlemmer.size() - 1 &&
-        (request.auth.uid in gammel.medlemmer) &&
-        !(request.auth.uid in ny.medlemmer) &&
+      return gammel.medlemmer.removeAll(ny.medlemmer) == [request.auth.uid] &&
+        ny.medlemmer.removeAll(gammel.medlemmer).size() == 0 &&
         ny.navn == gammel.navn &&
         ny.eierUid == gammel.eierUid &&
         ny.inviteKode == gammel.inviteKode;
+    }
+
+    // Kun oppslåbar med eksakt kjent kode (get), aldri gjennombla-bar (list).
+    match /invitasjoner/{kode} {
+      allow get: if innlogget();
+      allow list: if false;
+      allow create: if innlogget();
+      allow update: if false;
+      allow delete: if innlogget() &&
+        get(/databases/$(database)/documents/kjellere/$(resource.data.kjellerId)).data.eierUid == request.auth.uid;
     }
 
     match /kjellere/{kjellerId} {
-      allow read: if innlogget();
+      allow get: if innlogget() && request.auth.uid in resource.data.medlemmer;
+      allow list: if innlogget() && request.auth.uid in resource.data.medlemmer;
 
       allow create: if innlogget()
         && request.resource.data.eierUid == request.auth.uid

@@ -1,7 +1,12 @@
 // Firestore-basert datalag. Erstatter den tidligere IndexedDB-versjonen slik at
 // flere personer kan dele samme kjeller. Modell:
+//   invitasjoner/{inviteKode}           { kjellerId } — kun oppslåbar med eksakt kode, aldri listbar
 //   kjellere/{kjellerId}                { navn, eierUid, inviteKode, medlemmer: [uid, ...], opprettet }
 //   kjellere/{kjellerId}/viner/{vinId}   selve vin-/brennevindataen
+//
+// Kjellere er kun lesbare for egne medlemmer (håndhevet i firestore.rules) — derfor
+// går "bli med via kode" via den separate invitasjoner-samlingen, som kan slås opp
+// med eksakt kjent kode, men aldri listes ut i sin helhet.
 
 import {
   collection, doc, getDoc, getDocs, addDoc, setDoc, deleteDoc, updateDoc,
@@ -27,14 +32,16 @@ function brukerInfo() {
 export const KjellerDB = {
   async opprett(navn) {
     const b = brukerInfo();
+    const kode = slumpKode();
     const data = {
       navn: (navn || '').trim() || 'Min kjeller',
       eierUid: b.uid,
       medlemmer: [b.uid],
-      inviteKode: slumpKode(),
+      inviteKode: kode,
       opprettet: serverTimestamp(),
     };
     const ref = await addDoc(collection(db, 'kjellere'), data);
+    await setDoc(doc(db, 'invitasjoner', kode), { kjellerId: ref.id });
     return { id: ref.id, ...data };
   },
 
@@ -48,21 +55,28 @@ export const KjellerDB = {
   async bliMedViaKode(kode) {
     const b = brukerInfo();
     const renKode = kode.trim().toUpperCase();
-    const q = query(collection(db, 'kjellere'), where('inviteKode', '==', renKode));
-    const snap = await getDocs(q);
-    if (snap.empty) throw new Error('Fant ingen kjeller med den koden. Sjekk at du skrev riktig.');
-    const kjellerDoc = snap.docs[0];
-    const data = kjellerDoc.data();
-    if (data.medlemmer.includes(b.uid)) {
-      return { id: kjellerDoc.id, ...data };
+    const invSnap = await getDoc(doc(db, 'invitasjoner', renKode));
+    if (!invSnap.exists()) throw new Error('Fant ingen kjeller med den koden. Sjekk at du skrev riktig.');
+    const kjellerId = invSnap.data().kjellerId;
+    const kjellerRef = doc(db, 'kjellere', kjellerId);
+    try {
+      await updateDoc(kjellerRef, { medlemmer: arrayUnion(b.uid) });
+    } catch (err) {
+      if (err.code !== 'permission-denied') throw err;
+      // Sannsynligvis allerede medlem (ingen reell endring å gjøre) — bekreftes av oppslaget under.
     }
-    await updateDoc(kjellerDoc.ref, { medlemmer: arrayUnion(b.uid) });
-    return { id: kjellerDoc.id, ...data, medlemmer: [...data.medlemmer, b.uid] };
+    const kjellerSnap = await getDoc(kjellerRef);
+    if (!kjellerSnap.exists()) throw new Error('Fant ikke kjelleren etter å ha blitt med.');
+    return { id: kjellerId, ...kjellerSnap.data() };
   },
 
-  async nyInviteKode(kjellerId) {
+  async nyInviteKode(kjellerId, gammelKode) {
     const kode = slumpKode();
+    await setDoc(doc(db, 'invitasjoner', kode), { kjellerId });
     await updateDoc(doc(db, 'kjellere', kjellerId), { inviteKode: kode });
+    if (gammelKode) {
+      try { await deleteDoc(doc(db, 'invitasjoner', gammelKode)); } catch { /* ikke kritisk om dette feiler */ }
+    }
     return kode;
   },
 

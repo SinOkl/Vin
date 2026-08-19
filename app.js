@@ -1068,7 +1068,7 @@ function visInnstillinger() {
   if (nyKodeKnapp) {
     nyKodeKnapp.addEventListener('click', async () => {
       if (!confirm('Lage ny kode? Den gamle koden slutter å virke.')) return;
-      const kode = await KjellerDB.nyInviteKode(aktivKjeller.id);
+      const kode = await KjellerDB.nyInviteKode(aktivKjeller.id, aktivKjeller.inviteKode);
       aktivKjeller.inviteKode = kode;
       visInnstillinger();
     });

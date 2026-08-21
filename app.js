@@ -668,24 +668,43 @@ function visDetalj(id) {
         <a class="knapp" href="#/rediger/${v.id}">Rediger</a>
         ${v.drukketDato
           ? `<button class="knapp" id="angre-drukket-knapp">Legg tilbake i kjelleren</button>`
-          : `<button class="knapp knapp-gull" id="drukket-knapp">🍾 Merk som drukket</button>`}
+          : `
+            <button class="knapp" id="legg-til-flaske-knapp">+ Legg til flaske</button>
+            ${(Number(v.antallFlasker) || 0) > 1
+              ? `<button class="knapp" id="ta-ut-flaske-knapp">− Tatt ut en flaske</button>`
+              : `<button class="knapp knapp-gull" id="drukket-knapp">🍾 Merk som drukket</button>`}
+          `}
         <button class="knapp knapp-fare" id="slett-knapp">Slett</button>
       </div>
     </div>
   `));
 
+  const leggTilFlaskeKnapp = document.getElementById('legg-til-flaske-knapp');
+  if (leggTilFlaskeKnapp) {
+    leggTilFlaskeKnapp.addEventListener('click', async () => {
+      await VinDB.lagre(aktivKjeller.id, { ...v, antallFlasker: (Number(v.antallFlasker) || 0) + 1 });
+    });
+  }
+
+  const taUtFlaskeKnapp = document.getElementById('ta-ut-flaske-knapp');
+  if (taUtFlaskeKnapp) {
+    taUtFlaskeKnapp.addEventListener('click', async () => {
+      await VinDB.lagre(aktivKjeller.id, { ...v, antallFlasker: Math.max(0, (Number(v.antallFlasker) || 0) - 1) });
+    });
+  }
+
   const drukketKnapp = document.getElementById('drukket-knapp');
   if (drukketKnapp) {
     drukketKnapp.addEventListener('click', async () => {
       const idagIso = new Date().toISOString().slice(0, 10);
-      await VinDB.lagre(aktivKjeller.id, { ...v, drukketDato: idagIso });
+      await VinDB.lagre(aktivKjeller.id, { ...v, antallFlasker: 0, drukketDato: idagIso });
     });
   }
 
   const angreDrukketKnapp = document.getElementById('angre-drukket-knapp');
   if (angreDrukketKnapp) {
     angreDrukketKnapp.addEventListener('click', async () => {
-      await VinDB.lagre(aktivKjeller.id, { ...v, drukketDato: '' });
+      await VinDB.lagre(aktivKjeller.id, { ...v, antallFlasker: Math.max(1, Number(v.antallFlasker) || 0), drukketDato: '' });
     });
   }
 

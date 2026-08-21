@@ -996,6 +996,7 @@ function visSkjema(id, forhandsvalgtKategori) {
 
 function visInnstillinger() {
   const erEier = aktivKjeller.eierUid === bruker.uid;
+  const appUrl = location.origin + location.pathname.replace(/index\.html$/, '');
   app.innerHTML = '';
   app.appendChild(el(`
     <div class="side">
@@ -1003,11 +1004,29 @@ function visInnstillinger() {
 
       <section class="detaljseksjon">
         <h2>👥 Kjeller: ${escapeHtml(aktivKjeller.navn)}</h2>
-        <p class="hjelpetekst">${(aktivKjeller.medlemmer || []).length} medlem(mer). Del koden under for å invitere flere.</p>
+        <p class="hjelpetekst">${(aktivKjeller.medlemmer || []).length} medlem(mer). Del lenken og koden under for å invitere flere.</p>
+
+        <label class="importlabel" style="margin-top:2px;">App-lenke</label>
+        <div class="knapperad">
+          <span class="field invite-lenke">${escapeHtml(appUrl)}</span>
+          <button class="knapp" id="kopier-lenke-knapp">Kopier lenke</button>
+        </div>
+
+        <label class="importlabel">Invitasjonskode</label>
         <div class="knapperad">
           <span class="field invite-kode">${escapeHtml(aktivKjeller.inviteKode)}</span>
           <button class="knapp" id="kopier-kode-knapp">Kopier kode</button>
         </div>
+
+        <div class="knapperad">
+          <button class="knapp knapp-primaer" id="del-invitasjon-knapp">📤 Del invitasjon</button>
+        </div>
+
+        <p class="hjelpetekst">
+          Slik blir noen med: de åpner lenken → trykker «Logg inn med Google» →
+          velger «Bli med i en kjeller» → limer inn koden.
+        </p>
+
         ${erEier ? `<div class="knapperad"><button class="knapp" id="ny-kode-knapp">Lag ny kode</button></div>` : ''}
 
         ${mineKjellere.length > 1 ? `
@@ -1055,12 +1074,39 @@ function visInnstillinger() {
     </div>
   `));
 
+  document.getElementById('kopier-lenke-knapp').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(appUrl);
+      alert('Lenken er kopiert!');
+    } catch {
+      alert(`Kunne ikke kopiere automatisk. Lenken er: ${appUrl}`);
+    }
+  });
+
   document.getElementById('kopier-kode-knapp').addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(aktivKjeller.inviteKode);
       alert('Koden er kopiert! Del den med de du vil invitere.');
     } catch {
       alert(`Kunne ikke kopiere automatisk. Koden er: ${aktivKjeller.inviteKode}`);
+    }
+  });
+
+  document.getElementById('del-invitasjon-knapp').addEventListener('click', async () => {
+    const delTekst = `Bli med i vinkjelleren «${aktivKjeller.navn}»!\n1. Åpne lenken\n2. Logg inn med Google\n3. Velg «Bli med i en kjeller» og lim inn koden: ${aktivKjeller.inviteKode}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Invitasjon til Vinkjelleren', text: delTekst, url: appUrl });
+      } catch {
+        // Brukeren avbrøt delingen — ikke noe å varsle om.
+      }
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(`${delTekst}\n${appUrl}`);
+      alert('Denne telefonen/nettleseren støtter ikke direkte deling, så invitasjonsteksten er kopiert i stedet — lim den inn der du vil sende den.');
+    } catch {
+      alert(`${delTekst}\n${appUrl}`);
     }
   });
 

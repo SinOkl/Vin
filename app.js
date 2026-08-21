@@ -6,7 +6,7 @@ import { loggInnMedGoogle, loggUt, paInnloggingsendring } from './auth.js';
 const KATEGORIER = ['Vin', 'Brennevin'];
 
 const TYPER = {
-  'Vin': ['Rødvin', 'Hvitvin', 'Rosévin', 'Musserende', 'Dessertvin/Portvin', 'Annet'],
+  'Vin': ['Rødvin', 'Sider', 'Hvitvin', 'Rosévin', 'Musserende', 'Dessertvin/Portvin', 'Annet'],
   'Brennevin': ['Whisky', 'Vodka', 'Gin', 'Rom', 'Cognac/Brandy', 'Akevitt', 'Tequila', 'Likør', 'Annet'],
 };
 
@@ -19,6 +19,7 @@ const MATPAR_KATEGORIER = [
 const LAGRINGSFORSLAG = {
   'Vin': {
     'Rødvin': { temp: '12–16 °C', servering: '16–18 °C', fuktighet: '60–70 %', notat: 'Liggende, mørkt og vibrasjonsfritt. Jevn temperatur er viktigere enn eksakt tall.' },
+    'Sider': { temp: '8–12 °C', servering: '6–8 °C', fuktighet: '60–70 %', notat: 'Drikkes normalt ung og fersk, som rosévin — ikke beregnet for lang lagring. Server godt avkjølt, gjerne stående i kjøleskap rett før servering.' },
     'Hvitvin': { temp: '8–12 °C', servering: '8–10 °C', fuktighet: '60–70 %', notat: 'Liggende, mørkt. Kjøligere enn rødvin — bruk kjøleskap rett før servering.' },
     'Rosévin': { temp: '8–10 °C', servering: '8–10 °C', fuktighet: '60–70 %', notat: 'Drikkes normalt ung og fersk — ikke beregnet for lang lagring.' },
     'Musserende': { temp: '6–8 °C', servering: '6–8 °C', fuktighet: '60–70 %', notat: 'Stående eller liggende er begge greit. De fleste bør drikkes innen 1–3 år, årgangschampagne tåler mer.' },
@@ -70,7 +71,7 @@ const AI_PROMPT_MAL = `Du er ekspert på vin og brennevin. Jeg skal registrere e
 Regler:
 - Bruk kun feltnavnene over, ikke legg til andre.
 - "kategori" må være "Vin" eller "Brennevin".
-- Hvis kategori er "Vin": "type" må være én av: Rødvin, Hvitvin, Rosévin, Musserende, Dessertvin/Portvin, Annet.
+- Hvis kategori er "Vin": "type" må være én av: Rødvin, Sider, Hvitvin, Rosévin, Musserende, Dessertvin/Portvin, Annet.
 - Hvis kategori er "Brennevin": "type" må være én av: Whisky, Vodka, Gin, Rom, Cognac/Brandy, Akevitt, Tequila, Likør, Annet.
 - "matparKategorier" må kun inneholde verdier fra listen over, som en JSON-liste.
 - "lagringstemperatur" er hvor kaldt flasken bør oppbevares over tid, "serveringstemperatur" er hvor kald den bør være når den drikkes — disse er ofte ulike, ikke forveksle dem.

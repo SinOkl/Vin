@@ -943,7 +943,7 @@ function visSkjema(id, forhandsvalgtKategori) {
         <h2>🤖 ${trengerIdentifikasjon ? 'Ukjent strekkode — identifiser med AI' : 'Legg til med AI'}</h2>
         <p class="hjelpetekst">
           ${trengerIdentifikasjon
-            ? `Fant ikke strekkoden <strong>${escapeHtml(forhandsutfyltEan)}</strong> i noen database. Skriv gjerne inn det du husker om flasken, kopier forespørselen, og send den til en AI (f.eks. Claude eller ChatGPT).`
+            ? `Fant ikke strekkoden <strong>${escapeHtml(forhandsutfyltEan)}</strong> i noen database. Skriv gjerne inn det du husker om flasken, og trykk knappen under — den kopierer forespørselen og åpner Claude i en ny fane, klar til å lime inn.`
             : `Ta et bilde av etiketten og send det til en AI (f.eks. Claude eller ChatGPT)
           sammen med malen under — den funker for både vin og brennevin. Lim JSON-svaret
           inn i feltet — én flaske fyller ut skjemaet under så du kan sjekke det før
@@ -951,7 +951,7 @@ function visSkjema(id, forhandsvalgtKategori) {
         </p>
         ${trengerIdentifikasjon ? `<label>Det du husker om flasken (valgfritt)<textarea id="ai-notater-felt" rows="2" placeholder="f.eks. rødvin, italiensk, kjøpt på ferie"></textarea></label>` : ''}
         <div class="knapperad">
-          <button type="button" class="knapp" id="kopier-mal-knapp">${trengerIdentifikasjon ? 'Kopier AI-forespørsel' : 'Kopier AI-mal'}</button>
+          <button type="button" class="knapp" id="kopier-mal-knapp">${trengerIdentifikasjon ? 'Kopier & åpne Claude' : 'Kopier AI-mal'}</button>
         </div>
         <details class="mal-detaljer">
           <summary>Vis malen</summary>
@@ -1073,17 +1073,21 @@ function visSkjema(id, forhandsvalgtKategori) {
 
   const kopierMalKnapp = document.getElementById('kopier-mal-knapp');
   if (kopierMalKnapp) {
-    kopierMalKnapp.addEventListener('click', async () => {
+    kopierMalKnapp.addEventListener('click', () => {
+      // window.open MÅ kalles synkront i selve klikk-handleren, før noen await — ellers
+      // regnes det ikke lenger som utløst av et brukertrykk, og nettleseren blokkerer
+      // den som en uønsket popup.
+      if (trengerIdentifikasjon) window.open('https://claude.ai/new', '_blank', 'noopener');
+
       const promptTekst = trengerIdentifikasjon
         ? byggUkjendVinPrompt(forhandsutfyltEan, (document.getElementById('ai-notater-felt')?.value || '').trim())
         : AI_PROMPT_MAL;
-      try {
-        await navigator.clipboard.writeText(promptTekst);
-        alert(trengerIdentifikasjon ? 'Forespørselen er kopiert! Lim den inn i en samtale med en AI.' : 'Malen er kopiert! Lim den inn i en samtale med en AI, sammen med et bilde av etiketten.');
-      } catch {
+      navigator.clipboard.writeText(promptTekst).then(() => {
+        alert(trengerIdentifikasjon ? 'Forespørselen er kopiert, og Claude åpnes i en ny fane — lim den inn der.' : 'Malen er kopiert! Lim den inn i en samtale med en AI, sammen med et bilde av etiketten.');
+      }).catch(() => {
         document.querySelector('.mal-detaljer').open = true;
         alert('Fikk ikke tilgang til utklippstavlen. Malen er vist under — merk og kopier den manuelt.');
-      }
+      });
     });
   }
 

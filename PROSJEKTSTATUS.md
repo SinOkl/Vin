@@ -35,7 +35,7 @@ Se "Kjente mangler" nederst for det som gjenstår.
 | `index.html` | Sideskall, bunnavigasjon, versjonsmerke |
 | `styles.css` | All visuell stil, lys/mørk modus |
 | `app.js` | All logikk: ruting, visninger, skjema, filter, kjeller-UI |
-| `db.js` | Firestore-datalag: `KjellerDB` og `VinDB` |
+| `db.js` | Firestore-datalag: `KjellerDB`, `VinDB` og `ProduktDB` (delt strekkode-cache) |
 | `auth.js` | Google-innlogging/utlogging |
 | `firebase-init.js` | Kobler opp Firebase (Auth + Firestore m/offline-cache) |
 | `firebase-config.js` | Firebase-prosjektets offentlige nøkler (trygt at disse er i git) |
@@ -56,6 +56,10 @@ kjellere/{kjellerId}/viner/{vinId}  { kategori, navn, produsent, argang, type, l
                                        matparKategorier, matparNotater, smaksnotater, vurdering,
                                        bilde (base64), drukketDato, lagtTilAv, drukketAv,
                                        aiToppAr, aiBegrunnelse, aiKonfidens, drikkeklarKilde }
+produkter/{ean}                     { kategori, navn, produsent, argang, type, land, region, druer,
+                                       lagringstemperatur, lagringsfuktighet, serveringstemperatur,
+                                       drikkeklarFra, drikkeklarTil, matparKategorier, matparNotater,
+                                       aiToppAr, aiBegrunnelse, aiKonfidens, drikkeklarKilde, oppdatert }
 ```
 
 ## Alt som er bygget (kronologisk)
@@ -92,15 +96,19 @@ kjellere/{kjellerId}/viner/{vinId}  { kategori, navn, produsent, argang, type, l
 17. **Flaskeantall-justering**: «+ Legg til flaske»-knapp, og «Tatt ut en flaske» som bare
     reduserer antallet (uten å flytte til historikk) helt til det er 1 igjen — da vises
     «Merk som drukket» i stedet
-18. **Strekkodeskanning** (fase 1, uten Vinmonopolet-oppslag — se «Kjente mangler»):
-    live kameraskanning via ZXing (`skann.js`, CDN-importert), ny `#/skann`-rute.
-    Skanning finner duplikat i egen kjeller (foreslår «+ legg til flaske» i stedet for
-    ny post), ellers bæres EAN-en over til det tomme skjemaet. Ny innstilling
-    «Bruk AI-søk» (av som standard) tilbyr en egen AI-identifikasjons-prompt (Mal B)
-    for ukjente strekkoder, med samme kopier-til-utklippstavle/lim-inn-JSON-mønster
-    som «Legg til med AI» — nå med tolerant JSON-parsing (`parseAiJson`) som strips
-    \`\`\`json-kodeblokker. AI-genererte drikkevindu-estimater merkes tydelig som
-    estimat i detaljvisningen (`drikkeklarKilde: 'ai'`)
+18. **Strekkodeskanning**: live kameraskanning via ZXing (`skann.js`, CDN-importert),
+    ny `#/skann`-rute. Skanning sjekker først egen kjeller for duplikat (foreslår
+    «+ legg til flaske» i stedet for ny post), deretter den delte strekkode-cachen
+    (`produkter/{ean}` i Firestore, se `db.js` → `ProduktDB`) — kjent fra før gir
+    momentant utfylt skjema. Ukjent strekkode + innstillingen «Bruk AI-søk» (av som
+    standard) tilbyr en egen AI-identifikasjons-prompt (Mal B), med samme
+    kopier-til-utklippstavle/lim-inn-JSON-mønster som «Legg til med AI» — nå med
+    tolerant JSON-parsing (`parseAiJson`) som strips \`\`\`json-kodeblokker. Alle
+    lagringer av en vin med strekkode oppdaterer den delte cachen, slik at neste
+    skann av samme flaske — av hvem som helst i appen — treffer momentant. Ingen
+    ekstern API-avhengighet (se «Kjente mangler» for hvorfor direkte
+    Vinmonopolet-oppslag ble valgt bort). AI-genererte drikkevindu-estimater merkes
+    tydelig som estimat i detaljvisningen (`drikkeklarKilde: 'ai'`)
 
 ## Kjente fallgruver (lært på den harde måten — ikke gjenta)
 
@@ -130,21 +138,26 @@ kjellere/{kjellerId}/viner/{vinId}  { kategori, navn, produsent, argang, type, l
 - Ingen "gjenopprett slettet vin"
 - Ingen egen fillagring for bilder (bevisst valg, se over)
 - Sikkerhetsreglene er laget for en liten tillitsfull gruppe, ikke hardnet SaaS-nivå
-- **Vinmonopolet-oppslag på skannet strekkode er bevisst utsatt** (fase 2 av
-  strekkodeskanning, se punkt 18 over): api.vinmonopolet.no krever en hemmelig
-  abonnementsnøkkel som ikke kan ligge i klientkoden på GitHub Pages. Neste steg når
-  dette skal kobles inn:
-  1. Brukeren oppretter selv utviklerkonto + abonnementsnøkkel på api.vinmonopolet.no
-     (kontoopprettelse — kan ikke gjøres av meg)
-  2. Brukeren oppretter en gratis Cloudflare-konto (e-post+passord, ikke kort) og en
-     Worker som proxyer kallet og holder nøkkelen som en Worker-secret
-  3. Deretter kan `handterSkannetEan` utvides til å slå opp mot Workeren før den
-     faller tilbake til AI-identifikasjon, og resultatet caches i en ny delt
-     `produkter/{ean}`-collection i Firestore (krever også en `firestore.rules`-endring
-     — se skjemaet for `produkter/{ean}` beskrevet i `vinlagring-spesifikasjon.md`)
-  4. Cache-oppfriskingen ble bevisst forenklet til "lat" (frisk opp ved ny skanning av
-     samme EAN etter 24t) fremfor spesifikasjonens nattlige cron-jobb, for å unngå
-     cron-infrastruktur + Firestore-tilgang med tjenestekonto-nøkkel i første omgang
+- **Direkte Vinmonopolet-oppslag på skannet strekkode er bevisst valgt bort**, ikke
+  bare utsatt — undersøkt grundig (hentet den faktiske OpenAPI-spesifikasjonen deres
+  direkte) og funnet at det offisielle API-et (`api.vinmonopolet.no`) verken støtter
+  strekkode/EAN som søkefelt, eller gir noe mer enn `productId` + kort produktnavn per
+  produkt (ingen pris, land, druer o.l.) — ville krevd nøkkel + backend-proxy for
+  praktisk talt ingenting igjen. Det finnes et uoffisielt, udokumentert endepunkt
+  (`app.vinmonopolet.no/vmpws/v2/vmp/products/barCodeSearch/{ean}`, brukt av npm-pakken
+  `vinmonopolet`) som *har* støttet strekkode historisk, men denne hosten svarer ikke
+  lenger (DNS finner den ikke) — trolig migrert bort siden pakken sist ble oppdatert i
+  2023. Selve vinmonopolet.no sin egne nettside har fortsatt en fungerende
+  strekkode-skanner (bruker forøvrig ZXing, akkurat som `skann.js`), men det
+  bakenforliggende kallet er ikke kartlagt og ville uansett vært en uoffisiell,
+  når-som-helst-kan-forsvinne-avhengighet.
+- **Løsningen i stedet**: delt strekkode-cache i Firestore (`produkter/{ean}`, se
+  `db.js` → `ProduktDB` og `firestore.rules`). Når noen lagrer en vin med strekkode —
+  enten identifisert via AI-flyten eller fylt inn manuelt — lagres produktfakta
+  (ikke personlige felt som antall/pris/bilde) i denne delte samlingen. Neste skann av
+  samme strekkode, av hvem som helst i appen, gir treff momentant uten noen ekstern
+  API-avhengighet i det hele tatt. Cachen "friskes" naturlig opp ved at nye redigeringer
+  overskriver (merge) gamle fakta — ingen egen oppfriskingsjobb er bygget eller trengs.
 
 ## Andre dokumenter fra dette prosjektet
 

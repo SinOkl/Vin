@@ -5,10 +5,15 @@ rules_version = '2';
 //   invitasjoner/{inviteKode}           { kjellerId }  — kun oppslåbar med eksakt kjent kode, aldri listbar
 //   kjellere/{kjellerId}                { navn, eierUid, inviteKode, medlemmer: [uid, ...], opprettet }
 //   kjellere/{kjellerId}/viner/{vinId}   selve vin-/brennevindataen
+//   produkter/{ean}                     delt strekkode-cache — produktfakta, ikke kjeller-spesifikk
 //
 // Kun medlemmer av en kjeller kan lese/liste dens metadata og vinliste — ingen kan
 // bla gjennom andres kjellere. "Bli med via kode"-flyten går via invitasjoner/-
 // samlingen, som kun kan slås opp med eksakt kjent kode (aldri listet ut).
+// produkter/-samlingen er delt på tvers av alle kjellere med vilje (poenget er at
+// alle som bruker appen skal få nytte av at noen andre har identifisert samme
+// strekkode), og er derfor lesbar/skrivbar for alle innloggede, ikke bare egne
+// medlemmer — det er ikke persondata, kun objektive vin-/brennevinfakta.
 // Passer for en liten, tillitsfull venne-/familiegruppe — ikke tenkt som hardnet
 // flerbrukers-SaaS-sikkerhet.
 
@@ -73,6 +78,16 @@ service cloud.firestore {
       match /viner/{vinId} {
         allow read, write: if erMedlemAv(kjellerId);
       }
+    }
+
+    // Delt strekkode-cache. EAN-en er selve dokument-ID-en, ikke et felt — derfor er
+    // "get" (oppslag på kjent EAN) trygt å åpne for alle innloggede uten å avsløre
+    // noe man ikke allerede vet (samme prinsipp som invitasjoner/, se over).
+    match /produkter/{ean} {
+      allow get: if innlogget();
+      allow list: if false;
+      allow create, update: if innlogget();
+      allow delete: if false;
     }
   }
 }

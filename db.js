@@ -3,6 +3,7 @@
 //   invitasjoner/{inviteKode}           { kjellerId } — kun oppslåbar med eksakt kode, aldri listbar
 //   kjellere/{kjellerId}                { navn, eierUid, inviteKode, medlemmer: [uid, ...], opprettet }
 //   kjellere/{kjellerId}/viner/{vinId}   selve vin-/brennevindataen
+//   produkter/{ean}                     delt strekkode-cache (produktfakta, ikke kjeller-spesifikk)
 //
 // Kjellere er kun lesbare for egne medlemmer (håndhevet i firestore.rules) — derfor
 // går "bli med via kode" via den separate invitasjoner-samlingen, som kan slås opp
@@ -156,5 +157,21 @@ export const VinDB = {
       snap.docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
       await batch.commit();
     }
+  },
+};
+
+// ---------- Delt strekkode-cache ----------
+// Produktfakta (ikke personlig kjeller-data) nøkkelet på EAN, delt på tvers av alle
+// kjellere. Skrives til hver gang noen lagrer en vin med strekkode, slik at neste
+// skann av samme flaske — av hvem som helst i appen — gir treff momentant.
+
+export const ProduktDB = {
+  async hentByEan(ean) {
+    const snap = await getDoc(doc(db, 'produkter', ean));
+    return snap.exists() ? snap.data() : null;
+  },
+
+  async lagre(ean, produktFakta) {
+    await setDoc(doc(db, 'produkter', ean), { ...produktFakta, oppdatert: serverTimestamp() }, { merge: true });
   },
 };

@@ -1,4 +1,4 @@
-import { VinDB, KjellerDB } from './db.js';
+import { VinDB, KjellerDB, ProduktDB } from './db.js';
 import { loggInnMedGoogle, loggUt, paInnloggingsendring } from './auth.js';
 
 // ---------- Konstanter ----------
@@ -262,7 +262,7 @@ let aktivKjeller = null;
 let alleViner = [];
 let vinerAvslutt = null; // avslutter aktivt Firestore-abonnement ved kjellerbytte
 let stoppSkann = null; // stopper aktiv kameraskanning ved rutebytte
-let ventendeSkannetEan = null; // bæres over fra #/skann til skjemaet ved neste rute
+let ventendeSkannData = null; // { ean, ...kjenteFakta? } — bæres over fra #/skann til skjemaet
 const app = document.getElementById('app');
 const bunnav = document.querySelector('.bunnav');
 
@@ -827,16 +827,24 @@ function fyllSkjemaFraVin(skjema, data) {
 
 // ---------- Visning: Skann strekkode ----------
 
-// Tar imot en avlest/inntastet EAN: finner den allerede i egen kjeller, åpnes den vinen
-// i stedet for å opprette en duplikat. Ellers bæres EAN-en videre til det tomme skjemaet.
-function handterSkannetEan(ean) {
+// Tar imot en avlest/inntastet EAN. Finnes den allerede i egen kjeller, åpnes den vinen
+// i stedet for å opprette en duplikat. Ellers sjekkes den delte strekkode-cachen —
+// finnes fakta om flasken der fra før (noen andre har identifisert den), forhåndsutfylles
+// hele skjemaet. Uansett bæres EAN-en (og eventuelle kjente fakta) videre til skjemaet.
+async function handterSkannetEan(ean) {
   const funnet = alleViner.find((v) => v.ean === ean && !v.drukketDato);
   if (funnet) {
     alert(`«${funnet.navn}» finnes allerede i kjelleren. Bruk «+ Legg til flaske» på vinen for å øke antallet.`);
     location.hash = `#/vin/${funnet.id}`;
     return;
   }
-  ventendeSkannetEan = ean;
+  let kjenteFakta = null;
+  try {
+    kjenteFakta = await ProduktDB.hentByEan(ean);
+  } catch (err) {
+    console.error('[vinkjeller] Kunne ikke slå opp strekkode i delt cache:', err);
+  }
+  ventendeSkannData = { ean, ...(kjenteFakta || {}) };
   location.hash = '#/ny';
 }
 
@@ -890,26 +898,32 @@ function visSkann() {
 // ---------- Visning: Skjema (legg til / rediger) ----------
 
 function visSkjema(id, forhandsvalgtKategori) {
-  const skannetEan = ventendeSkannetEan;
-  ventendeSkannetEan = null;
+  const skannData = ventendeSkannData;
+  ventendeSkannData = null;
   const eksisterende = id ? alleViner.find((x) => x.id === id) : null;
-  const forhandsutfyltEan = !eksisterende && skannetEan ? skannetEan : '';
-  const kategoriStart = eksisterende ? (eksisterende.kategori || 'Vin') : (forhandsvalgtKategori === 'Brennevin' ? 'Brennevin' : 'Vin');
+  const forhandsutfyltEan = !eksisterende && skannData ? skannData.ean : '';
+  const fraSkann = !!forhandsutfyltEan;
+  const fraCache = fraSkann && Object.keys(skannData).length > 1; // mer enn bare { ean } = kjent fra før
+  const kategoriStart = eksisterende
+    ? (eksisterende.kategori || 'Vin')
+    : (fraCache && skannData.kategori) || (forhandsvalgtKategori === 'Brennevin' ? 'Brennevin' : 'Vin');
   const v = eksisterende || {
     kategori: kategoriStart,
     navn: '', produsent: '', argang: '', type: TYPER[kategoriStart][0], land: '', region: '', druer: '',
-    antallFlasker: 1, volumCl: 75, innkjopspris: '', innkjopsdato: '', kjoptHos: '', ean: forhandsutfyltEan,
+    antallFlasker: 1, volumCl: 75, innkjopspris: '', innkjopsdato: '', kjoptHos: '',
     lagringssted: '', lagringstemperatur: '', lagringsfuktighet: '', serveringstemperatur: '',
     drikkeklarFra: '', drikkeklarTil: '', matparKategorier: [], matparNotater: '',
     smaksnotater: '', vurdering: '', bilde: '', drukketDato: '',
     aiToppAr: '', aiBegrunnelse: '', aiKonfidens: '', drikkeklarKilde: '',
+    ...(fraCache ? skannData : {}),
+    ean: forhandsutfyltEan,
   };
   const vKategori = v.kategori || 'Vin';
   const ordKategori = vKategori === 'Brennevin' ? 'brennevin' : 'vin';
   const forslagStart = hentForslag(vKategori, v.type);
   const brukAiSok = localStorage.getItem('vinkjeller-bruk-ai-sok') === 'true';
-  const fraSkann = !!forhandsutfyltEan;
-  const visAiSeksjon = !eksisterende && (!fraSkann || brukAiSok);
+  const trengerIdentifikasjon = fraSkann && !fraCache;
+  const visAiSeksjon = !eksisterende && (!fraSkann || (trengerIdentifikasjon && brukAiSok));
 
   app.innerHTML = '';
   app.appendChild(el(`
@@ -921,22 +935,26 @@ function visSkjema(id, forhandsvalgtKategori) {
         <button type="button" class="visning-knapp ${vKategori === 'Brennevin' ? 'aktiv' : ''}" id="knapp-kat-brennevin">🥃 Brennevin</button>
       </div>
 
+      ${fraCache ? `
+      <p class="hjelpetekst">✅ Strekkoden <strong>${escapeHtml(forhandsutfyltEan)}</strong> er kjent fra før — feltene under er forhåndsutfylt. Sjekk at alt stemmer før du lagrer.</p>
+      ` : ''}
+
       ${visAiSeksjon ? `
       <section class="detaljseksjon">
-        <h2>🤖 ${fraSkann ? 'Ukjent strekkode — identifiser med AI' : 'Legg til med AI'}</h2>
+        <h2>🤖 ${trengerIdentifikasjon ? 'Ukjent strekkode — identifiser med AI' : 'Legg til med AI'}</h2>
         <p class="hjelpetekst">
-          ${fraSkann
+          ${trengerIdentifikasjon
             ? `Fant ikke strekkoden <strong>${escapeHtml(forhandsutfyltEan)}</strong> i noen database. Skriv gjerne inn det du husker om flasken, kopier forespørselen, og send den til en AI (f.eks. Claude eller ChatGPT).`
             : `Ta et bilde av etiketten og send det til en AI (f.eks. Claude eller ChatGPT)
           sammen med malen under — den funker for både vin og brennevin. Lim JSON-svaret
           inn i feltet — én flaske fyller ut skjemaet under så du kan sjekke det før
           lagring, en hel liste importeres rett inn.`}
         </p>
-        ${fraSkann ? `<label>Det du husker om flasken (valgfritt)<textarea id="ai-notater-felt" rows="2" placeholder="f.eks. rødvin, italiensk, kjøpt på ferie"></textarea></label>` : ''}
+        ${trengerIdentifikasjon ? `<label>Det du husker om flasken (valgfritt)<textarea id="ai-notater-felt" rows="2" placeholder="f.eks. rødvin, italiensk, kjøpt på ferie"></textarea></label>` : ''}
         <div class="knapperad">
-          <button type="button" class="knapp" id="kopier-mal-knapp">${fraSkann ? 'Kopier AI-forespørsel' : 'Kopier AI-mal'}</button>
+          <button type="button" class="knapp" id="kopier-mal-knapp">${trengerIdentifikasjon ? 'Kopier AI-forespørsel' : 'Kopier AI-mal'}</button>
         </div>
-        ${!fraSkann ? `
+        ${!trengerIdentifikasjon ? `
         <details class="mal-detaljer">
           <summary>Vis malen</summary>
           <pre class="kodeblokk">${escapeHtml(AI_PROMPT_MAL)}</pre>
@@ -1058,15 +1076,15 @@ function visSkjema(id, forhandsvalgtKategori) {
   const kopierMalKnapp = document.getElementById('kopier-mal-knapp');
   if (kopierMalKnapp) {
     kopierMalKnapp.addEventListener('click', async () => {
-      const promptTekst = fraSkann
+      const promptTekst = trengerIdentifikasjon
         ? byggUkjendVinPrompt(forhandsutfyltEan, (document.getElementById('ai-notater-felt')?.value || '').trim())
         : AI_PROMPT_MAL;
       try {
         await navigator.clipboard.writeText(promptTekst);
-        alert(fraSkann ? 'Forespørselen er kopiert! Lim den inn i en samtale med en AI.' : 'Malen er kopiert! Lim den inn i en samtale med en AI, sammen med et bilde av etiketten.');
+        alert(trengerIdentifikasjon ? 'Forespørselen er kopiert! Lim den inn i en samtale med en AI.' : 'Malen er kopiert! Lim den inn i en samtale med en AI, sammen med et bilde av etiketten.');
       } catch {
-        if (!fraSkann) document.querySelector('.mal-detaljer').open = true;
-        alert(fraSkann
+        if (!trengerIdentifikasjon) document.querySelector('.mal-detaljer').open = true;
+        alert(trengerIdentifikasjon
           ? `Fikk ikke tilgang til utklippstavlen. Her er forespørselen — kopier den manuelt:\n\n${promptTekst}`
           : 'Fikk ikke tilgang til utklippstavlen. Malen er vist under — merk og kopier den manuelt.');
       }
@@ -1142,6 +1160,19 @@ function visSkjema(id, forhandsvalgtKategori) {
     };
     if (eksisterende) nyVin.id = eksisterende.id;
     const id2 = await VinDB.lagre(aktivKjeller.id, nyVin);
+
+    if (nyVin.ean) {
+      const produktFakta = {
+        kategori: nyVin.kategori, navn: nyVin.navn, produsent: nyVin.produsent, argang: nyVin.argang,
+        type: nyVin.type, land: nyVin.land, region: nyVin.region, druer: nyVin.druer,
+        lagringstemperatur: nyVin.lagringstemperatur, lagringsfuktighet: nyVin.lagringsfuktighet,
+        serveringstemperatur: nyVin.serveringstemperatur, drikkeklarFra: nyVin.drikkeklarFra, drikkeklarTil: nyVin.drikkeklarTil,
+        matparKategorier: nyVin.matparKategorier, matparNotater: nyVin.matparNotater,
+        aiToppAr: nyVin.aiToppAr, aiBegrunnelse: nyVin.aiBegrunnelse, aiKonfidens: nyVin.aiKonfidens, drikkeklarKilde: nyVin.drikkeklarKilde,
+      };
+      ProduktDB.lagre(nyVin.ean, produktFakta).catch((err) => console.error('[vinkjeller] Kunne ikke oppdatere delt strekkode-cache:', err));
+    }
+
     location.hash = `#/vin/${eksisterende ? eksisterende.id : id2}`;
   });
 }

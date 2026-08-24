@@ -51,10 +51,11 @@ invitasjoner/{inviteKode}           { kjellerId }
 kjellere/{kjellerId}                { navn, eierUid, inviteKode, medlemmer: [uid,...], opprettet }
 kjellere/{kjellerId}/viner/{vinId}  { kategori, navn, produsent, argang, type, land, region, druer,
                                        antallFlasker, volumCl, innkjopspris, innkjopsdato, kjoptHos,
-                                       lagringssted, lagringstemperatur, lagringsfuktighet,
+                                       ean, lagringssted, lagringstemperatur, lagringsfuktighet,
                                        serveringstemperatur, drikkeklarFra, drikkeklarTil,
                                        matparKategorier, matparNotater, smaksnotater, vurdering,
-                                       bilde (base64), drukketDato, lagtTilAv, drukketAv }
+                                       bilde (base64), drukketDato, lagtTilAv, drukketAv,
+                                       aiToppAr, aiBegrunnelse, aiKonfidens, drikkeklarKilde }
 ```
 
 ## Alt som er bygget (kronologisk)
@@ -91,6 +92,15 @@ kjellere/{kjellerId}/viner/{vinId}  { kategori, navn, produsent, argang, type, l
 17. **Flaskeantall-justering**: «+ Legg til flaske»-knapp, og «Tatt ut en flaske» som bare
     reduserer antallet (uten å flytte til historikk) helt til det er 1 igjen — da vises
     «Merk som drukket» i stedet
+18. **Strekkodeskanning** (fase 1, uten Vinmonopolet-oppslag — se «Kjente mangler»):
+    live kameraskanning via ZXing (`skann.js`, CDN-importert), ny `#/skann`-rute.
+    Skanning finner duplikat i egen kjeller (foreslår «+ legg til flaske» i stedet for
+    ny post), ellers bæres EAN-en over til det tomme skjemaet. Ny innstilling
+    «Bruk AI-søk» (av som standard) tilbyr en egen AI-identifikasjons-prompt (Mal B)
+    for ukjente strekkoder, med samme kopier-til-utklippstavle/lim-inn-JSON-mønster
+    som «Legg til med AI» — nå med tolerant JSON-parsing (`parseAiJson`) som strips
+    \`\`\`json-kodeblokker. AI-genererte drikkevindu-estimater merkes tydelig som
+    estimat i detaljvisningen (`drikkeklarKilde: 'ai'`)
 
 ## Kjente fallgruver (lært på den harde måten — ikke gjenta)
 
@@ -120,6 +130,21 @@ kjellere/{kjellerId}/viner/{vinId}  { kategori, navn, produsent, argang, type, l
 - Ingen "gjenopprett slettet vin"
 - Ingen egen fillagring for bilder (bevisst valg, se over)
 - Sikkerhetsreglene er laget for en liten tillitsfull gruppe, ikke hardnet SaaS-nivå
+- **Vinmonopolet-oppslag på skannet strekkode er bevisst utsatt** (fase 2 av
+  strekkodeskanning, se punkt 18 over): api.vinmonopolet.no krever en hemmelig
+  abonnementsnøkkel som ikke kan ligge i klientkoden på GitHub Pages. Neste steg når
+  dette skal kobles inn:
+  1. Brukeren oppretter selv utviklerkonto + abonnementsnøkkel på api.vinmonopolet.no
+     (kontoopprettelse — kan ikke gjøres av meg)
+  2. Brukeren oppretter en gratis Cloudflare-konto (e-post+passord, ikke kort) og en
+     Worker som proxyer kallet og holder nøkkelen som en Worker-secret
+  3. Deretter kan `handterSkannetEan` utvides til å slå opp mot Workeren før den
+     faller tilbake til AI-identifikasjon, og resultatet caches i en ny delt
+     `produkter/{ean}`-collection i Firestore (krever også en `firestore.rules`-endring
+     — se skjemaet for `produkter/{ean}` beskrevet i `vinlagring-spesifikasjon.md`)
+  4. Cache-oppfriskingen ble bevisst forenklet til "lat" (frisk opp ved ny skanning av
+     samme EAN etter 24t) fremfor spesifikasjonens nattlige cron-jobb, for å unngå
+     cron-infrastruktur + Firestore-tilgang med tjenestekonto-nøkkel i første omgang
 
 ## Andre dokumenter fra dette prosjektet
 

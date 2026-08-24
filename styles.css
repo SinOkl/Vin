@@ -301,6 +301,15 @@ textarea { min-height: 70px; resize: vertical; }
   padding: 14px;
 }
 
+.skann-video {
+  width: 100%;
+  max-height: 60vh;
+  background: #000;
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  object-fit: cover;
+}
+
 .detaljliste { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
 .detaljliste dt { color: var(--tekst-lys); font-size: 0.85rem; }
 .detaljliste dd { margin: 0; font-weight: 600; font-size: 0.9rem; }

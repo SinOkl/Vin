@@ -1,4 +1,4 @@
-const CACHE_NAVN = 'vinkjeller-v17';
+const CACHE_NAVN = 'vinkjeller-v18';
 const APP_SHELL = [
   './',
   './index.html',
@@ -6,6 +6,7 @@ const APP_SHELL = [
   './app.js',
   './db.js',
   './auth.js',
+  './skann.js',
   './firebase-init.js',
   './firebase-config.js',
   './manifest.webmanifest',

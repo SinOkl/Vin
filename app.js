@@ -81,6 +81,23 @@ Regler:
 
 Her er flasken: [lim inn bilde av etiketten, eller beskriv den (navn, produsent, årgang) her]`;
 
+// Bygger en AI-forespørsel for en flaske som ble skannet, men ikke funnet i noen database.
+function byggUkjendVinPrompt(ean, brukerNotater) {
+  return `Du er vinekspert. Jeg har skannet en flaske som ikke finnes i noen database jeg har tilgang til. Alt jeg vet er:
+
+Strekkode (EAN): ${ean}
+Det jeg selv vet om flasken: ${brukerNotater || '(ingenting mer)'}
+
+Identifiser flasken så godt du klarer — bruk gjerne nettsøk på strekkoden og sjekk vinmonopolet.no — og gi et lagringsestimat. Vær tydelig på hvor sikker du er.
+
+Svar KUN med gyldig JSON (ingen forklaringstekst, ingen kodeblokk-merking rundt), i nøyaktig dette formatet:
+{"navn": "<navn>", "produsent": "<produsent>", "argang": <årstall eller null>,
+ "land": "<land>", "region": "<område>", "druer": "<druer, kommaseparert>",
+ "confidence": "high" | "medium" | "low",
+ "drinkFrom": <år>, "drinkUntil": <år>, "peakYear": <år>,
+ "reasoning": "<2-3 setninger>"}`;
+}
+
 // ---------- Hjelpefunksjoner ----------
 
 function formatKr(n) {
@@ -148,6 +165,13 @@ function tekstEllerTom(v) {
   return v === undefined || v === null ? '' : String(v).trim();
 }
 
+// Tar imot tekst som (forhåpentligvis) er JSON fra en AI, og tåler at den er pakket inn i
+// ```json ... ```-kodeblokk-markører selv om vi ber AI-en la være.
+function parseAiJson(tekst) {
+  const renset = tekst.trim().replace(/^```[a-z]*\s*/i, '').replace(/```\s*$/, '').trim();
+  return JSON.parse(renset);
+}
+
 // Gjør om et løst/upresist objekt (typisk fra en AI) til en gyldig vin/brennevin. Returnerer null hvis navn mangler.
 function normaliserImportertVin(raw) {
   if (!raw || typeof raw !== 'object') return null;
@@ -168,6 +192,10 @@ function normaliserImportertVin(raw) {
   let vurdering = tallEllerTom(raw.vurdering);
   if (vurdering) vurdering = Math.min(5, Math.max(1, Math.round(vurdering)));
 
+  // Mal B (ukjend-vin-identifikasjon etter strekkodeskanning) svarer på engelsk med
+  // drinkFrom/drinkUntil/peakYear/reasoning/confidence i stedet for de norske feltnavnene.
+  const erAiEstimat = raw.peakYear !== undefined || raw.reasoning !== undefined || raw.confidence !== undefined;
+
   return {
     kategori,
     navn,
@@ -182,18 +210,23 @@ function normaliserImportertVin(raw) {
     innkjopspris: tallEllerTom(raw.innkjopspris),
     innkjopsdato: tekstEllerTom(raw.innkjopsdato),
     kjoptHos: tekstEllerTom(raw.kjoptHos),
+    ean: tekstEllerTom(raw.ean),
     lagringssted: tekstEllerTom(raw.lagringssted),
     lagringstemperatur: tekstEllerTom(raw.lagringstemperatur),
     lagringsfuktighet: tekstEllerTom(raw.lagringsfuktighet),
     serveringstemperatur: tekstEllerTom(raw.serveringstemperatur),
-    drikkeklarFra: tallEllerTom(raw.drikkeklarFra),
-    drikkeklarTil: tallEllerTom(raw.drikkeklarTil),
+    drikkeklarFra: tallEllerTom(raw.drikkeklarFra ?? raw.drinkFrom),
+    drikkeklarTil: tallEllerTom(raw.drikkeklarTil ?? raw.drinkUntil),
     matparKategorier: matpar,
     matparNotater: tekstEllerTom(raw.matparNotater),
     smaksnotater: tekstEllerTom(raw.smaksnotater),
     vurdering,
     bilde: '',
     drukketDato: '',
+    aiToppAr: tallEllerTom(raw.peakYear),
+    aiBegrunnelse: tekstEllerTom(raw.reasoning),
+    aiKonfidens: tekstEllerTom(raw.confidence),
+    drikkeklarKilde: erAiEstimat ? 'ai' : '',
   };
 }
 
@@ -201,7 +234,7 @@ function normaliserImportertVin(raw) {
 async function importerFraJsonTekst(tekst) {
   let data;
   try {
-    data = JSON.parse(tekst);
+    data = parseAiJson(tekst);
   } catch {
     throw new Error('Dette er ikke gyldig JSON. Sjekk at du limte inn hele svaret fra AI-en, uten ekstra tekst rundt.');
   }
@@ -228,6 +261,8 @@ let mineKjellere = [];
 let aktivKjeller = null;
 let alleViner = [];
 let vinerAvslutt = null; // avslutter aktivt Firestore-abonnement ved kjellerbytte
+let stoppSkann = null; // stopper aktiv kameraskanning ved rutebytte
+let ventendeSkannetEan = null; // bæres over fra #/skann til skjemaet ved neste rute
 const app = document.getElementById('app');
 const bunnav = document.querySelector('.bunnav');
 
@@ -255,6 +290,8 @@ function rute() {
 }
 
 function ruteIndre() {
+  if (stoppSkann) { stoppSkann(); stoppSkann = null; }
+
   const hash = location.hash || '#/';
   const [, path, param] = hash.match(/^#\/?([^/]*)\/?([^/]*)$/) || [];
 
@@ -283,6 +320,8 @@ function ruteIndre() {
   } else if (path === 'innstillinger') {
     settAktivNav('#/innstillinger');
     visInnstillinger();
+  } else if (path === 'skann') {
+    visSkann();
   } else {
     visOversikt();
   }
@@ -634,6 +673,7 @@ function visDetalj(id) {
           ${dRad('Verdi totalt', verdiTotal ? `${formatKr(verdiTotal)}  (${v.antallFlasker} × ${formatKr(v.innkjopspris)})` : '')}
           ${dRad('Kjøpt hos', v.kjoptHos)}
           ${dRad('Innkjøpsdato', v.innkjopsdato)}
+          ${dRad('Strekkode (EAN)', v.ean)}
           ${dRad('Lagt til av', v.lagtTilAv?.navn)}
         </dl>
       </section>
@@ -649,6 +689,7 @@ function visDetalj(id) {
           ${dRad('Siste år', v.drikkeklarTil)}
         </dl>
         <p class="hjelpetekst">💡 ${escapeHtml(forslag.notat)}</p>
+        ${v.drikkeklarKilde === 'ai' ? `<p class="hjelpetekst">🤖 Drikkevinduet er et AI-generert estimat${v.aiToppAr ? `, med antatt toppår ${escapeHtml(v.aiToppAr)}` : ''}${v.aiKonfidens ? ` (sikkerhet: ${escapeHtml(v.aiKonfidens)})` : ''}.${v.aiBegrunnelse ? ` ${escapeHtml(v.aiBegrunnelse)}` : ''}</p>` : ''}
       </section>
 
       <section class="detaljseksjon">
@@ -784,22 +825,91 @@ function fyllSkjemaFraVin(skjema, data) {
   });
 }
 
+// ---------- Visning: Skann strekkode ----------
+
+// Tar imot en avlest/inntastet EAN: finner den allerede i egen kjeller, åpnes den vinen
+// i stedet for å opprette en duplikat. Ellers bæres EAN-en videre til det tomme skjemaet.
+function handterSkannetEan(ean) {
+  const funnet = alleViner.find((v) => v.ean === ean && !v.drukketDato);
+  if (funnet) {
+    alert(`«${funnet.navn}» finnes allerede i kjelleren. Bruk «+ Legg til flaske» på vinen for å øke antallet.`);
+    location.hash = `#/vin/${funnet.id}`;
+    return;
+  }
+  ventendeSkannetEan = ean;
+  location.hash = '#/ny';
+}
+
+function visSkann() {
+  app.innerHTML = '';
+  app.appendChild(el(`
+    <div class="side">
+      <h1>📷 Skann strekkode</h1>
+      <p class="hjelpetekst" id="skann-status">Ber om tilgang til kameraet…</p>
+      <video id="skann-video" class="skann-video" autoplay playsinline muted></video>
+      <div class="knapperad">
+        <a class="knapp" href="#/ny">Avbryt</a>
+      </div>
+      <details class="mal-detaljer" id="skann-manuell-detaljer">
+        <summary>Skriv inn strekkode manuelt i stedet</summary>
+        <label>Strekkode (EAN)<input id="skann-manuell-input" inputmode="numeric" placeholder="f.eks. 7311041012345"></label>
+        <div class="knapperad">
+          <button type="button" class="knapp" id="skann-manuell-knapp">Bruk denne koden</button>
+        </div>
+      </details>
+    </div>
+  `));
+
+  document.getElementById('skann-manuell-knapp').addEventListener('click', () => {
+    const ean = document.getElementById('skann-manuell-input').value.trim();
+    if (!ean) { alert('Skriv inn strekkoden først.'); return; }
+    handterSkannetEan(ean);
+  });
+
+  import('./skann.js').then(({ startSkann }) => {
+    if (location.hash !== '#/skann') return; // brukeren rakk å navigere bort før modulen lastet
+    const video = document.getElementById('skann-video');
+    const status = document.getElementById('skann-status');
+    startSkann(video, {
+      onTreff: (ean) => {
+        status.textContent = `Fant strekkode ${ean}`;
+        handterSkannetEan(ean);
+      },
+      onFeil: (err) => {
+        console.error('[vinkjeller] Kunne ikke starte kameraet:', err);
+        status.textContent = 'Fikk ikke tilgang til kameraet. Skriv inn strekkoden manuelt under.';
+        document.getElementById('skann-manuell-detaljer').open = true;
+      },
+    }).then((stopp) => {
+      if (location.hash === '#/skann') stoppSkann = stopp;
+      else stopp();
+    });
+  });
+}
+
 // ---------- Visning: Skjema (legg til / rediger) ----------
 
 function visSkjema(id, forhandsvalgtKategori) {
+  const skannetEan = ventendeSkannetEan;
+  ventendeSkannetEan = null;
   const eksisterende = id ? alleViner.find((x) => x.id === id) : null;
+  const forhandsutfyltEan = !eksisterende && skannetEan ? skannetEan : '';
   const kategoriStart = eksisterende ? (eksisterende.kategori || 'Vin') : (forhandsvalgtKategori === 'Brennevin' ? 'Brennevin' : 'Vin');
   const v = eksisterende || {
     kategori: kategoriStart,
     navn: '', produsent: '', argang: '', type: TYPER[kategoriStart][0], land: '', region: '', druer: '',
-    antallFlasker: 1, volumCl: 75, innkjopspris: '', innkjopsdato: '', kjoptHos: '',
+    antallFlasker: 1, volumCl: 75, innkjopspris: '', innkjopsdato: '', kjoptHos: '', ean: forhandsutfyltEan,
     lagringssted: '', lagringstemperatur: '', lagringsfuktighet: '', serveringstemperatur: '',
     drikkeklarFra: '', drikkeklarTil: '', matparKategorier: [], matparNotater: '',
     smaksnotater: '', vurdering: '', bilde: '', drukketDato: '',
+    aiToppAr: '', aiBegrunnelse: '', aiKonfidens: '', drikkeklarKilde: '',
   };
   const vKategori = v.kategori || 'Vin';
   const ordKategori = vKategori === 'Brennevin' ? 'brennevin' : 'vin';
   const forslagStart = hentForslag(vKategori, v.type);
+  const brukAiSok = localStorage.getItem('vinkjeller-bruk-ai-sok') === 'true';
+  const fraSkann = !!forhandsutfyltEan;
+  const visAiSeksjon = !eksisterende && (!fraSkann || brukAiSok);
 
   app.innerHTML = '';
   app.appendChild(el(`
@@ -811,24 +921,28 @@ function visSkjema(id, forhandsvalgtKategori) {
         <button type="button" class="visning-knapp ${vKategori === 'Brennevin' ? 'aktiv' : ''}" id="knapp-kat-brennevin">🥃 Brennevin</button>
       </div>
 
-      ${!eksisterende ? `
+      ${visAiSeksjon ? `
       <section class="detaljseksjon">
-        <h2>🤖 Legg til med AI</h2>
+        <h2>🤖 ${fraSkann ? 'Ukjent strekkode — identifiser med AI' : 'Legg til med AI'}</h2>
         <p class="hjelpetekst">
-          Ta et bilde av etiketten og send det til en AI (f.eks. Claude eller ChatGPT)
+          ${fraSkann
+            ? `Fant ikke strekkoden <strong>${escapeHtml(forhandsutfyltEan)}</strong> i noen database. Skriv gjerne inn det du husker om flasken, kopier forespørselen, og send den til en AI (f.eks. Claude eller ChatGPT).`
+            : `Ta et bilde av etiketten og send det til en AI (f.eks. Claude eller ChatGPT)
           sammen med malen under — den funker for både vin og brennevin. Lim JSON-svaret
           inn i feltet — én flaske fyller ut skjemaet under så du kan sjekke det før
-          lagring, en hel liste importeres rett inn.
+          lagring, en hel liste importeres rett inn.`}
         </p>
+        ${fraSkann ? `<label>Det du husker om flasken (valgfritt)<textarea id="ai-notater-felt" rows="2" placeholder="f.eks. rødvin, italiensk, kjøpt på ferie"></textarea></label>` : ''}
         <div class="knapperad">
-          <button type="button" class="knapp" id="kopier-mal-knapp">Kopier AI-mal</button>
+          <button type="button" class="knapp" id="kopier-mal-knapp">${fraSkann ? 'Kopier AI-forespørsel' : 'Kopier AI-mal'}</button>
         </div>
+        ${!fraSkann ? `
         <details class="mal-detaljer">
           <summary>Vis malen</summary>
           <pre class="kodeblokk">${escapeHtml(AI_PROMPT_MAL)}</pre>
-        </details>
+        </details>` : ''}
         <label class="importlabel">Lim inn JSON-svar fra AI-en
-          <textarea id="ai-json-felt" rows="5" placeholder='{"kategori": "Vin", "navn": "...", ...}'></textarea>
+          <textarea id="ai-json-felt" rows="5" placeholder='{"navn": "...", ...}'></textarea>
         </label>
         <div class="knapperad">
           <button type="button" class="knapp knapp-primaer" id="ai-bruk-knapp">Bruk JSON</button>
@@ -843,6 +957,11 @@ function visSkjema(id, forhandsvalgtKategori) {
           <input type="file" accept="image/*" capture="environment" id="bilde-input">
         </label>
         <img id="bilde-forhandsvisning" class="detaljbilde" src="${v.bilde || ''}" style="${v.bilde ? '' : 'display:none'}">
+        ${!eksisterende ? `
+        <div class="knapperad">
+          <button type="button" class="knapp" id="skann-knapp">📷 Skann strekkode</button>
+        </div>
+        ` : ''}
 
         <label>Navn *<input required name="navn" value="${escapeHtml(v.navn)}"></label>
         <label>Produsent<input name="produsent" value="${escapeHtml(v.produsent)}"></label>
@@ -866,7 +985,10 @@ function visSkjema(id, forhandsvalgtKategori) {
           <label>Pris per flaske (kr)<input type="number" min="0" name="innkjopspris" value="${escapeHtml(v.innkjopspris)}"></label>
           <label>Innkjøpsdato<input type="date" name="innkjopsdato" value="${escapeHtml(v.innkjopsdato)}"></label>
         </div>
-        <label>Kjøpt hos<input name="kjoptHos" value="${escapeHtml(v.kjoptHos)}"></label>
+        <div class="to-kolonner">
+          <label>Kjøpt hos<input name="kjoptHos" value="${escapeHtml(v.kjoptHos)}"></label>
+          <label>Strekkode (EAN)<input name="ean" inputmode="numeric" value="${escapeHtml(v.ean)}"></label>
+        </div>
 
         <h2 class="skjema-seksjon">🌡️ Lagring &amp; servering</h2>
         <label>Lagringssted<input name="lagringssted" placeholder="f.eks. Reol A, hylle 3" value="${escapeHtml(v.lagringssted)}"></label>
@@ -912,6 +1034,7 @@ function visSkjema(id, forhandsvalgtKategori) {
   const bildeInput = document.getElementById('bilde-input');
   const bildeForhandsvisning = document.getElementById('bilde-forhandsvisning');
   let bildeData = v.bilde || '';
+  let aiEkstraFelt = { aiToppAr: v.aiToppAr || '', aiBegrunnelse: v.aiBegrunnelse || '', aiKonfidens: v.aiKonfidens || '', drikkeklarKilde: v.drikkeklarKilde || '' };
 
   bildeInput.addEventListener('change', async () => {
     if (bildeInput.files[0]) {
@@ -920,6 +1043,9 @@ function visSkjema(id, forhandsvalgtKategori) {
       bildeForhandsvisning.style.display = '';
     }
   });
+
+  const skannKnapp = document.getElementById('skann-knapp');
+  if (skannKnapp) skannKnapp.addEventListener('click', () => { location.hash = '#/skann'; });
 
   document.getElementById('knapp-kat-vin').addEventListener('click', () => byttKategoriISkjema(skjema, 'Vin'));
   document.getElementById('knapp-kat-brennevin').addEventListener('click', () => byttKategoriISkjema(skjema, 'Brennevin'));
@@ -932,12 +1058,17 @@ function visSkjema(id, forhandsvalgtKategori) {
   const kopierMalKnapp = document.getElementById('kopier-mal-knapp');
   if (kopierMalKnapp) {
     kopierMalKnapp.addEventListener('click', async () => {
+      const promptTekst = fraSkann
+        ? byggUkjendVinPrompt(forhandsutfyltEan, (document.getElementById('ai-notater-felt')?.value || '').trim())
+        : AI_PROMPT_MAL;
       try {
-        await navigator.clipboard.writeText(AI_PROMPT_MAL);
-        alert('Malen er kopiert! Lim den inn i en samtale med en AI, sammen med et bilde av etiketten.');
+        await navigator.clipboard.writeText(promptTekst);
+        alert(fraSkann ? 'Forespørselen er kopiert! Lim den inn i en samtale med en AI.' : 'Malen er kopiert! Lim den inn i en samtale med en AI, sammen med et bilde av etiketten.');
       } catch {
-        document.querySelector('.mal-detaljer').open = true;
-        alert('Fikk ikke tilgang til utklippstavlen. Malen er vist under — merk og kopier den manuelt.');
+        if (!fraSkann) document.querySelector('.mal-detaljer').open = true;
+        alert(fraSkann
+          ? `Fikk ikke tilgang til utklippstavlen. Her er forespørselen — kopier den manuelt:\n\n${promptTekst}`
+          : 'Fikk ikke tilgang til utklippstavlen. Malen er vist under — merk og kopier den manuelt.');
       }
     });
   }
@@ -951,7 +1082,7 @@ function visSkjema(id, forhandsvalgtKategori) {
 
       let data;
       try {
-        data = JSON.parse(tekst);
+        data = parseAiJson(tekst);
       } catch {
         alert('Dette er ikke gyldig JSON. Sjekk at du limte inn hele svaret fra AI-en, uten ekstra tekst rundt.');
         return;
@@ -962,6 +1093,7 @@ function visSkjema(id, forhandsvalgtKategori) {
         const vinData = normaliserImportertVin(liste[0]);
         if (!vinData) { alert('Fant ingen gyldig post i JSON-en (mangler «navn»-felt?).'); return; }
         fyllSkjemaFraVin(skjema, vinData);
+        aiEkstraFelt = { aiToppAr: vinData.aiToppAr, aiBegrunnelse: vinData.aiBegrunnelse, aiKonfidens: vinData.aiKonfidens, drikkeklarKilde: vinData.drikkeklarKilde };
         felt.value = '';
       } else {
         try {
@@ -994,6 +1126,7 @@ function visSkjema(id, forhandsvalgtKategori) {
       innkjopspris: fd.get('innkjopspris') ? Number(fd.get('innkjopspris')) : '',
       innkjopsdato: fd.get('innkjopsdato'),
       kjoptHos: fd.get('kjoptHos').trim(),
+      ean: fd.get('ean').trim(),
       lagringssted: fd.get('lagringssted').trim(),
       lagringstemperatur: fd.get('lagringstemperatur').trim(),
       lagringsfuktighet: fd.get('lagringsfuktighet').trim(),
@@ -1005,6 +1138,7 @@ function visSkjema(id, forhandsvalgtKategori) {
       smaksnotater: fd.get('smaksnotater').trim(),
       vurdering: fd.get('vurdering') ? Number(fd.get('vurdering')) : '',
       bilde: bildeData,
+      ...aiEkstraFelt,
     };
     if (eksisterende) nyVin.id = eksisterende.id;
     const id2 = await VinDB.lagre(aktivKjeller.id, nyVin);
@@ -1072,6 +1206,15 @@ function visInnstillinger() {
         <label class="importlabel">Importer fra fil (du kan velge flere samtidig)
           <input type="file" accept="application/json" id="importer-input" multiple>
         </label>
+      </section>
+
+      <section class="detaljseksjon">
+        <h2>📷 Skanning</h2>
+        <label class="checkbox-label">
+          <input type="checkbox" id="bruk-ai-sok-checkbox" ${localStorage.getItem('vinkjeller-bruk-ai-sok') === 'true' ? 'checked' : ''}>
+          Bruk AI-søk når en skannet strekkode ikke finnes i kjelleren
+        </label>
+        <p class="hjelpetekst">Av som standard, for at skanning skal gå raskest mulig. Skru på om du vil kunne kopiere en ferdig AI-forespørsel for å identifisere ukjente flasker etter skanning.</p>
       </section>
 
       <section class="detaljseksjon">
@@ -1213,6 +1356,10 @@ function visInnstillinger() {
     if (feilFiler.length) melding += `\n\nFeil i ${feilFiler.length} fil(er):\n${feilFiler.join('\n')}`;
     alert(melding);
     if (totalAntall) location.hash = '#/viner';
+  });
+
+  document.getElementById('bruk-ai-sok-checkbox').addEventListener('change', (e) => {
+    localStorage.setItem('vinkjeller-bruk-ai-sok', e.target.checked ? 'true' : 'false');
   });
 
   document.getElementById('logg-ut-knapp').addEventListener('click', () => loggUt());

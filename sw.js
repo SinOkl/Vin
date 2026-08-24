@@ -1,4 +1,4 @@
-const CACHE_NAVN = 'vinkjeller-v22';
+const CACHE_NAVN = 'vinkjeller-v23';
 const APP_SHELL = [
   './',
   './index.html',

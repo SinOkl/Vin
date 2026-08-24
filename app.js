@@ -143,16 +143,22 @@ function komprimerBilde(file, maxDim = 900, kvalitet = 0.75) {
   });
 }
 
-// Gjør om en data-URL (fra komprimerBilde) til en Blob, synkront — ingen fetch/await,
-// slik at den trygt kan brukes rett før navigator.clipboard.write() i en klikk-handler
-// uten å miste brukerhandlingen (transient activation) som kreves for utklippstavle+popup.
-function dataUrlTilBlob(dataUrl) {
-  const [meta, base64] = dataUrl.split(',');
-  const mime = meta.match(/:(.*?);/)[1];
-  const binaer = atob(base64);
-  const bytes = new Uint8Array(binaer.length);
-  for (let i = 0; i < binaer.length; i++) bytes[i] = binaer.charCodeAt(i);
-  return new Blob([bytes], { type: mime });
+// navigator.clipboard.write() støtter i praksis kun image/png på tvers av nettlesere
+// (bl.a. Safari avviser image/jpeg) — komprimerBilde lagrer som JPEG for å holde
+// Firestore-dokumentet lite, så konverter om til PNG kun for selve utklippet.
+function jpegDataUrlTilPngBlob(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onerror = reject;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('canvas.toBlob ga ingen blob'))), 'image/png');
+    };
+    img.src = dataUrl;
+  });
 }
 
 function el(html) {
@@ -1097,30 +1103,29 @@ function visSkjema(id, forhandsvalgtKategori) {
         ? byggUkjendVinPrompt(forhandsutfyltEan, (document.getElementById('ai-notater-felt')?.value || '').trim())
         : AI_PROMPT_MAL;
 
-      const vellykket = () => alert(bildeData && !trengerIdentifikasjon
-        ? 'Bilde og forespørsel er kopiert, og Claude åpnes i en ny fane — lim inn der.'
-        : 'Forespørselen er kopiert, og Claude åpnes i en ny fane — lim den inn der.');
+      const vellykketMedBilde = () => alert('Bilde og forespørsel er kopiert, og Claude åpnes i en ny fane — lim inn der.');
+      const vellykketUtenBilde = () => alert('Forespørselen er kopiert, og Claude åpnes i en ny fane — lim den inn der.');
       const feilet = () => {
         document.querySelector('.mal-detaljer').open = true;
         alert('Fikk ikke tilgang til utklippstavlen. Malen er vist under — merk og kopier den manuelt.');
+      };
+      const fallTilbakeTilKunTekst = (arsak) => {
+        console.error('[vinkjeller] Kunne ikke kopiere bilde+tekst sammen, faller tilbake til kun tekst:', arsak);
+        navigator.clipboard.writeText(promptTekst).then(vellykketUtenBilde).catch(feilet);
       };
 
       // Har brukeren allerede tatt et bilde (kun mulig i "Legg til med AI"-flyten, siden
       // strekkodeflyten ikke har noe bilde) — legg det ved på utklippstavlen sammen med
       // teksten, som to representasjoner av samme utklipp.
       if (bildeData && !trengerIdentifikasjon) {
-        const bildeBlob = dataUrlTilBlob(bildeData);
-        navigator.clipboard.write([
+        jpegDataUrlTilPngBlob(bildeData).then((pngBlob) => navigator.clipboard.write([
           new ClipboardItem({
             'text/plain': new Blob([promptTekst], { type: 'text/plain' }),
-            [bildeBlob.type]: bildeBlob,
+            'image/png': pngBlob,
           }),
-        ]).then(vellykket).catch(() => {
-          // Noen nettlesere støtter ikke bilde+tekst i samme utklipp — fall tilbake til kun tekst.
-          navigator.clipboard.writeText(promptTekst).then(vellykket).catch(feilet);
-        });
+        ])).then(vellykketMedBilde).catch(fallTilbakeTilKunTekst);
       } else {
-        navigator.clipboard.writeText(promptTekst).then(vellykket).catch(feilet);
+        navigator.clipboard.writeText(promptTekst).then(vellykketUtenBilde).catch(feilet);
       }
     });
   }

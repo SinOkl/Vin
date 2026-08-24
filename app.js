@@ -143,6 +143,18 @@ function komprimerBilde(file, maxDim = 900, kvalitet = 0.75) {
   });
 }
 
+// Gjør om en data-URL (fra komprimerBilde) til en Blob, synkront — ingen fetch/await,
+// slik at den trygt kan brukes rett før navigator.clipboard.write() i en klikk-handler
+// uten å miste brukerhandlingen (transient activation) som kreves for utklippstavle+popup.
+function dataUrlTilBlob(dataUrl) {
+  const [meta, base64] = dataUrl.split(',');
+  const mime = meta.match(/:(.*?);/)[1];
+  const binaer = atob(base64);
+  const bytes = new Uint8Array(binaer.length);
+  for (let i = 0; i < binaer.length; i++) bytes[i] = binaer.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
 function el(html) {
   const t = document.createElement('template');
   t.innerHTML = html.trim();
@@ -934,6 +946,16 @@ function visSkjema(id, forhandsvalgtKategori) {
         <button type="button" class="visning-knapp ${vKategori === 'Brennevin' ? 'aktiv' : ''}" id="knapp-kat-brennevin">🥃 Brennevin</button>
       </div>
 
+      <label>Bilde av etikett
+        <input type="file" accept="image/*" capture="environment" id="bilde-input">
+      </label>
+      <img id="bilde-forhandsvisning" class="detaljbilde" src="${v.bilde || ''}" style="${v.bilde ? '' : 'display:none'}">
+      ${!eksisterende ? `
+      <div class="knapperad">
+        <button type="button" class="knapp" id="skann-knapp">📷 Skann strekkode</button>
+      </div>
+      ` : ''}
+
       ${fraCache ? `
       <p class="hjelpetekst">✅ Strekkoden <strong>${escapeHtml(forhandsutfyltEan)}</strong> er kjent fra før — feltene under er forhåndsutfylt. Sjekk at alt stemmer før du lagrer.</p>
       ` : ''}
@@ -944,10 +966,10 @@ function visSkjema(id, forhandsvalgtKategori) {
         <p class="hjelpetekst">
           ${trengerIdentifikasjon
             ? `Fant ikke strekkoden <strong>${escapeHtml(forhandsutfyltEan)}</strong> i noen database. Skriv gjerne inn det du husker om flasken, og trykk knappen under — den kopierer forespørselen og åpner Claude i en ny fane, klar til å lime inn.`
-            : `Ta et bilde av etiketten og send det til en AI (f.eks. Claude eller ChatGPT)
-          sammen med malen under — den funker for både vin og brennevin. Lim JSON-svaret
-          inn i feltet — én flaske fyller ut skjemaet under så du kan sjekke det før
-          lagring, en hel liste importeres rett inn.`}
+            : `Ta et bilde av etiketten over, og trykk knappen under — har du tatt et bilde,
+          blir det kopiert sammen med malen og Claude åpnes i en ny fane, klar til å lime
+          inn. Lim JSON-svaret AI-en gir tilbake inn i feltet under — én flaske fyller ut
+          skjemaet så du kan sjekke det før lagring, en hel liste importeres rett inn.`}
         </p>
         ${trengerIdentifikasjon ? `<label>Det du husker om flasken (valgfritt)<textarea id="ai-notater-felt" rows="2" placeholder="f.eks. rødvin, italiensk, kjøpt på ferie"></textarea></label>` : ''}
         <div class="knapperad">
@@ -968,16 +990,6 @@ function visSkjema(id, forhandsvalgtKategori) {
 
       <form id="vinskjema" class="skjema">
         <input type="hidden" name="kategori" id="kategori-felt" value="${vKategori}">
-
-        <label>Bilde av etikett
-          <input type="file" accept="image/*" capture="environment" id="bilde-input">
-        </label>
-        <img id="bilde-forhandsvisning" class="detaljbilde" src="${v.bilde || ''}" style="${v.bilde ? '' : 'display:none'}">
-        ${!eksisterende ? `
-        <div class="knapperad">
-          <button type="button" class="knapp" id="skann-knapp">📷 Skann strekkode</button>
-        </div>
-        ` : ''}
 
         <label>Navn *<input required name="navn" value="${escapeHtml(v.navn)}"></label>
         <label>Produsent<input name="produsent" value="${escapeHtml(v.produsent)}"></label>
@@ -1057,6 +1069,8 @@ function visSkjema(id, forhandsvalgtKategori) {
       bildeData = await komprimerBilde(bildeInput.files[0]);
       bildeForhandsvisning.src = bildeData;
       bildeForhandsvisning.style.display = '';
+      const kopierMalKnapp = document.getElementById('kopier-mal-knapp');
+      if (kopierMalKnapp && !trengerIdentifikasjon) kopierMalKnapp.textContent = 'Kopier bilde + mal og åpne Claude';
     }
   });
 
@@ -1077,17 +1091,37 @@ function visSkjema(id, forhandsvalgtKategori) {
       // window.open MÅ kalles synkront i selve klikk-handleren, før noen await — ellers
       // regnes det ikke lenger som utløst av et brukertrykk, og nettleseren blokkerer
       // den som en uønsket popup.
-      if (trengerIdentifikasjon) window.open('https://claude.ai/new', '_blank', 'noopener');
+      window.open('https://claude.ai/new', '_blank', 'noopener');
 
       const promptTekst = trengerIdentifikasjon
         ? byggUkjendVinPrompt(forhandsutfyltEan, (document.getElementById('ai-notater-felt')?.value || '').trim())
         : AI_PROMPT_MAL;
-      navigator.clipboard.writeText(promptTekst).then(() => {
-        alert(trengerIdentifikasjon ? 'Forespørselen er kopiert, og Claude åpnes i en ny fane — lim den inn der.' : 'Malen er kopiert! Lim den inn i en samtale med en AI, sammen med et bilde av etiketten.');
-      }).catch(() => {
+
+      const vellykket = () => alert(bildeData && !trengerIdentifikasjon
+        ? 'Bilde og forespørsel er kopiert, og Claude åpnes i en ny fane — lim inn der.'
+        : 'Forespørselen er kopiert, og Claude åpnes i en ny fane — lim den inn der.');
+      const feilet = () => {
         document.querySelector('.mal-detaljer').open = true;
         alert('Fikk ikke tilgang til utklippstavlen. Malen er vist under — merk og kopier den manuelt.');
-      });
+      };
+
+      // Har brukeren allerede tatt et bilde (kun mulig i "Legg til med AI"-flyten, siden
+      // strekkodeflyten ikke har noe bilde) — legg det ved på utklippstavlen sammen med
+      // teksten, som to representasjoner av samme utklipp.
+      if (bildeData && !trengerIdentifikasjon) {
+        const bildeBlob = dataUrlTilBlob(bildeData);
+        navigator.clipboard.write([
+          new ClipboardItem({
+            'text/plain': new Blob([promptTekst], { type: 'text/plain' }),
+            [bildeBlob.type]: bildeBlob,
+          }),
+        ]).then(vellykket).catch(() => {
+          // Noen nettlesere støtter ikke bilde+tekst i samme utklipp — fall tilbake til kun tekst.
+          navigator.clipboard.writeText(promptTekst).then(vellykket).catch(feilet);
+        });
+      } else {
+        navigator.clipboard.writeText(promptTekst).then(vellykket).catch(feilet);
+      }
     });
   }
 

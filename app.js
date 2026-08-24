@@ -46,9 +46,9 @@ function hentForslag(kategori, type) {
 
 const dataArsnr = () => new Date().getFullYear();
 
-const AI_PROMPT_MAL = `Du er ekspert på vin og brennevin. Jeg skal registrere en flaske i katalogen min. Se på bildet/beskrivelsen jeg gir deg, og bruk nettsøk til å slå opp produktet: bekreft fakta som druesammensetning, region, typisk drikkevindu og smaksprofil — ikke bare gjett ut fra det som står på etiketten — og søk alltid opp utsalgsprisen på vinmonopolet.no. Svar deretter KUN med gyldig JSON (ingen forklaringstekst, ingen kodeblokk-merking rundt) i nøyaktig dette formatet:
-
-{
+// Delt av begge AI-malene under, slik at de alltid ber om nøyaktig samme JSON-form —
+// det er det som gjør at samme lim-inn-flyt (og normaliserImportertVin) fungerer for begge.
+const AI_JSON_SKJEMA_OG_REGLER = `{
   "kategori": "Vin | Brennevin",
   "navn": "",
   "produsent": "",
@@ -76,26 +76,25 @@ Regler:
 - "matparKategorier" må kun inneholde verdier fra listen over, som en JSON-liste.
 - "lagringstemperatur" er hvor kaldt flasken bør oppbevares over tid, "serveringstemperatur" er hvor kald den bør være når den drikkes — disse er ofte ulike, ikke forveksle dem.
 - "innkjopspris" er prisen PER FLASKE i kroner. Søk ALLTID opp produktet på vinmonopolet.no og bruk utsalgsprisen derfra — ikke la dette feltet stå tomt bare fordi prisen ikke står på etiketten. Oppgir jeg selv en annen pris i meldingen (f.eks. faktisk betalt pris, tilbud, eller kjøpt i utlandet), bruk min pris i stedet for Vinmonopolet sin. Finner du ikke produktet på Vinmonopolet i det hele tatt, skriv "" — ikke gjett et tall.
-- Bruk nettsøk til å dobbeltsjekke fakta om produktet (druer, region, drikkevindu, smaksprofil, pris) fremfor å basere deg kun på synlig tekst på etiketten — det gir mer presise svar.
+- Bruk nettsøk til å dobbeltsjekke fakta om produktet (druer, region, drikkevindu, smaksprofil, pris) fremfor å basere deg kun på synlig tekst på etiketten — det gir mer presise svar.`;
+
+const AI_PROMPT_MAL = `Du er ekspert på vin og brennevin. Jeg skal registrere en flaske i katalogen min. Se på bildet/beskrivelsen jeg gir deg, og bruk nettsøk til å slå opp produktet: bekreft fakta som druesammensetning, region, typisk drikkevindu og smaksprofil — ikke bare gjett ut fra det som står på etiketten — og søk alltid opp utsalgsprisen på vinmonopolet.no. Svar deretter KUN med gyldig JSON (ingen forklaringstekst, ingen kodeblokk-merking rundt) i nøyaktig dette formatet:
+
+${AI_JSON_SKJEMA_OG_REGLER}
 - Har du ikke tilgang til nettsøk i det hele tatt: gjør så godt du kan ut fra bildet/beskrivelsen og din egen kunnskap, og skriv "" på felt (inkludert innkjopspris) du er usikker på — ikke gjett blindt.
 
 Her er flasken: [lim inn bilde av etiketten, eller beskriv den (navn, produsent, årgang) her]`;
 
-// Bygger en AI-forespørsel for en flaske som ble skannet, men ikke funnet i noen database.
+// Samme skjema/regler som AI_PROMPT_MAL over, bare med strekkode + egne notater som
+// identifikasjonsgrunnlag i stedet for et bilde av etiketten.
 function byggUkjendVinPrompt(ean, brukerNotater) {
-  return `Du er vinekspert. Jeg har skannet en flaske som ikke finnes i noen database jeg har tilgang til. Alt jeg vet er:
+  return `Du er ekspert på vin og brennevin. Jeg har skannet strekkoden til en flaske jeg skal registrere i katalogen min, men fant den ikke i noen database. Bruk nettsøk på strekkoden (EAN) og det jeg eventuelt vet om flasken til å identifisere den, og slå opp produktet: bekreft fakta som druesammensetning, region, typisk drikkevindu og smaksprofil — ikke bare gjett — og søk alltid opp utsalgsprisen på vinmonopolet.no. Svar deretter KUN med gyldig JSON (ingen forklaringstekst, ingen kodeblokk-merking rundt) i nøyaktig dette formatet:
+
+${AI_JSON_SKJEMA_OG_REGLER}
+- Har du ikke tilgang til nettsøk i det hele tatt, eller finner ikke strekkoden: gjør så godt du kan ut fra det jeg skriver under, og skriv "" på felt (inkludert innkjopspris) du er usikker på — ikke gjett blindt.
 
 Strekkode (EAN): ${ean}
-Det jeg selv vet om flasken: ${brukerNotater || '(ingenting mer)'}
-
-Identifiser flasken så godt du klarer — bruk gjerne nettsøk på strekkoden og sjekk vinmonopolet.no — og gi et lagringsestimat. Vær tydelig på hvor sikker du er.
-
-Svar KUN med gyldig JSON (ingen forklaringstekst, ingen kodeblokk-merking rundt), i nøyaktig dette formatet:
-{"navn": "<navn>", "produsent": "<produsent>", "argang": <årstall eller null>,
- "land": "<land>", "region": "<område>", "druer": "<druer, kommaseparert>",
- "confidence": "high" | "medium" | "low",
- "drinkFrom": <år>, "drinkUntil": <år>, "peakYear": <år>,
- "reasoning": "<2-3 setninger>"}`;
+Det jeg selv vet om flasken: ${brukerNotater || '(ingenting mer)'}`;
 }
 
 // ---------- Hjelpefunksjoner ----------
@@ -954,11 +953,10 @@ function visSkjema(id, forhandsvalgtKategori) {
         <div class="knapperad">
           <button type="button" class="knapp" id="kopier-mal-knapp">${trengerIdentifikasjon ? 'Kopier AI-forespørsel' : 'Kopier AI-mal'}</button>
         </div>
-        ${!trengerIdentifikasjon ? `
         <details class="mal-detaljer">
           <summary>Vis malen</summary>
-          <pre class="kodeblokk">${escapeHtml(AI_PROMPT_MAL)}</pre>
-        </details>` : ''}
+          <pre class="kodeblokk">${escapeHtml(trengerIdentifikasjon ? byggUkjendVinPrompt(forhandsutfyltEan, '') : AI_PROMPT_MAL)}</pre>
+        </details>
         <label class="importlabel">Lim inn JSON-svar fra AI-en
           <textarea id="ai-json-felt" rows="5" placeholder='{"navn": "...", ...}'></textarea>
         </label>
@@ -1083,10 +1081,8 @@ function visSkjema(id, forhandsvalgtKategori) {
         await navigator.clipboard.writeText(promptTekst);
         alert(trengerIdentifikasjon ? 'Forespørselen er kopiert! Lim den inn i en samtale med en AI.' : 'Malen er kopiert! Lim den inn i en samtale med en AI, sammen med et bilde av etiketten.');
       } catch {
-        if (!trengerIdentifikasjon) document.querySelector('.mal-detaljer').open = true;
-        alert(trengerIdentifikasjon
-          ? `Fikk ikke tilgang til utklippstavlen. Her er forespørselen — kopier den manuelt:\n\n${promptTekst}`
-          : 'Fikk ikke tilgang til utklippstavlen. Malen er vist under — merk og kopier den manuelt.');
+        document.querySelector('.mal-detaljer').open = true;
+        alert('Fikk ikke tilgang til utklippstavlen. Malen er vist under — merk og kopier den manuelt.');
       }
     });
   }

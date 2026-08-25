@@ -846,6 +846,21 @@ function visDetalj(id) {
         ? `<span class="status-badge status-drukket">🍾 Drukket ${escapeHtml(v.drukketDato)}${v.drukketAv ? ' av ' + escapeHtml(v.drukketAv.navn) : ''}</span>`
         : `<span class="status-badge ${status.klasse}">${status.label}</span>`}
 
+      <div class="knapperad">
+        ${v.drukketDato
+          ? `<button class="knapp" id="angre-drukket-knapp">Legg tilbake i kjelleren</button>`
+          : `
+            <button class="knapp" id="legg-til-flaske-knapp">+ Legg til flaske</button>
+            ${(Number(v.antallFlasker) || 0) > 1
+              ? `<button class="knapp" id="ta-ut-flaske-knapp">− Tatt ut en flaske</button>`
+              : `<button class="knapp knapp-gull" id="drukket-knapp">🍾 Merk som drukket</button>`}
+          `}
+      </div>
+      <div class="vurdering-rad">
+        <span class="vurdering-stjerner" id="vurdering-stjerner">${v.vurdering ? '★'.repeat(v.vurdering) + '☆'.repeat(5 - v.vurdering) : 'Ingen vurdering'}</span>
+        <input type="range" min="0" max="5" step="1" id="vurdering-slider" value="${v.vurdering || 0}">
+      </div>
+
       ${erBrennevin && !v.drukketDato ? `
       <section class="detaljseksjon">
         <h2>🧪 Fyllnivå</h2>
@@ -905,14 +920,6 @@ function visDetalj(id) {
 
       <div class="knapperad">
         <a class="knapp" href="#/rediger/${v.id}">Rediger</a>
-        ${v.drukketDato
-          ? `<button class="knapp" id="angre-drukket-knapp">Legg tilbake i kjelleren</button>`
-          : `
-            <button class="knapp" id="legg-til-flaske-knapp">+ Legg til flaske</button>
-            ${(Number(v.antallFlasker) || 0) > 1
-              ? `<button class="knapp" id="ta-ut-flaske-knapp">− Tatt ut en flaske</button>`
-              : `<button class="knapp knapp-gull" id="drukket-knapp">🍾 Merk som drukket</button>`}
-          `}
         <button class="knapp knapp-fare" id="slett-knapp">Slett</button>
       </div>
     </div>
@@ -926,6 +933,19 @@ function visDetalj(id) {
     });
     fyllnivaSlider.addEventListener('change', async () => {
       await VinDB.lagre(aktivKjeller.id, { ...v, fyllniva: Number(fyllnivaSlider.value) });
+    });
+  }
+
+  const vurderingSlider = document.getElementById('vurdering-slider');
+  if (vurderingSlider) {
+    const vurderingStjerner = document.getElementById('vurdering-stjerner');
+    vurderingSlider.addEventListener('input', () => {
+      const n = Number(vurderingSlider.value);
+      vurderingStjerner.textContent = n ? '★'.repeat(n) + '☆'.repeat(5 - n) : 'Ingen vurdering';
+    });
+    vurderingSlider.addEventListener('change', async () => {
+      const n = Number(vurderingSlider.value);
+      await VinDB.lagre(aktivKjeller.id, { ...v, vurdering: n || '' });
     });
   }
 

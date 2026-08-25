@@ -195,12 +195,13 @@ produkter/{ean}                     { kategori, navn, produsent, argang, type, l
     (samme kostnadsavveining som Storage, se «Kjente mangler»).
     `ADMIN_UID` er satt til Sindres faktiske uid (`po4qTCXpl4W7AneJDHdc5ZpkMM22`,
     fra Firebase Console → Authentication → Users) i både `db.js` og
-    `firestore.rules`. **Viktig før produksjonssetting**: `firestore.rules` er
-    ikke deployet automatisk — må limes inn manuelt i Firebase Console →
-    Firestore → Rules → Publish, som vanlig. Eksisterende medlemmer (fra før
-    denne funksjonen, f.eks. Anne Marie) vil se venteskjermen ved neste
-    innlogging og må godkjennes manuelt på `#/godkjenninger` (eller
-    forhåndsgodkjennes i Firebase Console ved å opprette et
+    `firestore.rules`. De nye reglene er limt inn og publisert i Firebase
+    Console, og koden er pushet til `main` (live på GitHub Pages). **Ikke
+    live-testet ennå** — neste steg er å bekrefte at Sindre går rett inn som
+    admin, og at et eksisterende medlem (f.eks. Anne Marie) treffer
+    venteskjermen ved neste innlogging og kan godkjennes fra
+    `#/godkjenninger` uten omlasting. Kan evt. forhåndsgodkjennes i Firebase
+    Console i stedet ved å opprette et
     `brukere/{uid}`-dokument med `status:'godkjent'`).
 
 ## Kjente fallgruver (lært på den harde måten — ikke gjenta)

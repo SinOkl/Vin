@@ -6,6 +6,11 @@ rules_version = '2';
 //   kjellere/{kjellerId}                { navn, eierUid, inviteKode, medlemmer: [uid, ...], opprettet }
 //   kjellere/{kjellerId}/viner/{vinId}   selve vin-/brennevindataen
 //   produkter/{ean}                     delt strekkode-cache — produktfakta, ikke kjeller-spesifikk
+//   brukere/{uid}                       { navn, epost, foto, status: 'ventende'|'godkjent'|'avvist', opprettet }
+//
+// Nye brukere godkjennes av ADMIN_UID (se konstanten under) før de kan opprette
+// eller bli med i noen kjeller — se erGodkjent() og brukere/-reglene nederst.
+// ADMIN_UID må matche eksakt konstanten med samme navn i db.js.
 //
 // Kun medlemmer av en kjeller kan lese/liste dens metadata og vinliste — ingen kan
 // bla gjennom andres kjellere. "Bli med via kode"-flyten går via invitasjoner/-
@@ -20,8 +25,21 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Sindres egen Firebase Auth-uid (Authentication → Users i Firebase Console).
+    // Må matche ADMIN_UID i db.js nøyaktig.
+    function adminUid() {
+      return 'po4qTCXpl4W7AneJDHdc5ZpkMM22';
+    }
+
     function innlogget() {
       return request.auth != null;
+    }
+
+    // Admin er alltid godkjent (bootstrap). Andre må ha et brukere/{uid}-dokument
+    // med status 'godkjent' — satt av admin via Godkjenninger-siden i appen.
+    function erGodkjent() {
+      return request.auth.uid == adminUid() ||
+        get(/databases/$(database)/documents/brukere/$(request.auth.uid)).data.status == 'godkjent';
     }
 
     function erMedlemAv(kjellerId) {
@@ -63,13 +81,13 @@ service cloud.firestore {
       allow get: if innlogget() && request.auth.uid in resource.data.medlemmer;
       allow list: if innlogget() && request.auth.uid in resource.data.medlemmer;
 
-      allow create: if innlogget()
+      allow create: if innlogget() && erGodkjent()
         && request.resource.data.eierUid == request.auth.uid
         && request.resource.data.medlemmer == [request.auth.uid];
 
       allow update: if innlogget() && (
         resource.data.eierUid == request.auth.uid ||
-        kunLaTilSegSelv(resource.data, request.resource.data) ||
+        (erGodkjent() && kunLaTilSegSelv(resource.data, request.resource.data)) ||
         kunFjernetSegSelv(resource.data, request.resource.data)
       );
 
@@ -87,6 +105,19 @@ service cloud.firestore {
       allow get: if innlogget();
       allow list: if false;
       allow create, update: if innlogget();
+      allow delete: if false;
+    }
+
+    // Nye brukere havner i 'ventende' ved første innlogging (satt av klienten selv,
+    // se BrukerDB.sikreEget i db.js) og må godkjennes av admin før erGodkjent()
+    // slipper dem til i kjellere/. Kun admin kan lese/endre andres dokumenter.
+    match /brukere/{uid} {
+      allow get: if innlogget() && (request.auth.uid == uid || request.auth.uid == adminUid());
+      allow list: if innlogget() && request.auth.uid == adminUid();
+      allow create: if innlogget() && request.auth.uid == uid &&
+        (request.resource.data.status == 'ventende' ||
+         (uid == adminUid() && request.resource.data.status == 'godkjent'));
+      allow update: if innlogget() && request.auth.uid == adminUid();
       allow delete: if false;
     }
   }

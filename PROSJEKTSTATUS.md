@@ -180,6 +180,29 @@ produkter/{ean}                     { kategori, navn, produsent, argang, type, l
     en fersk rendring (med ny, ikke-deaktivert knapp) er klar. Merk: å redigere «Antall
     flasker» direkte i skjemaet er upåvirket av dette — det er alltid ett atomisk skriv
 
+25. **Godkjenning av nye brukere**: hver ny bruker som logger inn med Google for
+    første gang havner nå i `brukere/{uid}` med `status:'ventende'` (opprettet av
+    klienten selv, `BrukerDB.sikreEget` i `db.js`) og ser en venteskjerm — ingen
+    tilgang til å opprette eller bli med i noen kjeller (håndhevet i
+    `firestore.rules` via `erGodkjent()`, ikke bare i UI). Sindre
+    (`ADMIN_UID`, hardkodet konstant i både `db.js` og `firestore.rules`) ser et
+    badge-tall på Innstillinger-navlenken og godkjenner/avviser på den nye siden
+    `#/godkjenninger`. Sanntidsoppdatert (`onSnapshot`) begge veier — søkeren
+    slippes automatisk videre uten omlasting når admin godkjenner. Frikoblet fra
+    invitasjonskode-flyten med vilje: godkjenning skjer én gang per konto, ikke
+    per kjeller. **Kun in-app-varsel** (badge), ingen push til telefon — det
+    ble bevisst valgt bort for å slippe Cloud Functions/Blaze-betalingsplan
+    (samme kostnadsavveining som Storage, se «Kjente mangler»).
+    `ADMIN_UID` er satt til Sindres faktiske uid (`po4qTCXpl4W7AneJDHdc5ZpkMM22`,
+    fra Firebase Console → Authentication → Users) i både `db.js` og
+    `firestore.rules`. **Viktig før produksjonssetting**: `firestore.rules` er
+    ikke deployet automatisk — må limes inn manuelt i Firebase Console →
+    Firestore → Rules → Publish, som vanlig. Eksisterende medlemmer (fra før
+    denne funksjonen, f.eks. Anne Marie) vil se venteskjermen ved neste
+    innlogging og må godkjennes manuelt på `#/godkjenninger` (eller
+    forhåndsgodkjennes i Firebase Console ved å opprette et
+    `brukere/{uid}`-dokument med `status:'godkjent'`).
+
 ## Kjente fallgruver (lært på den harde måten — ikke gjenta)
 
 - **`<input type="file" capture="...">` hopper forbi filvelgeren og går rett til kameraet**

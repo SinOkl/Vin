@@ -1,4 +1,4 @@
-import { VinDB, KjellerDB, ProduktDB } from './db.js';
+import { VinDB, KjellerDB, ProduktDB, BrukerDB, ADMIN_UID } from './db.js';
 import { loggInnMedGoogle, loggUt, paInnloggingsendring } from './auth.js';
 
 // ---------- Konstanter ----------
@@ -352,6 +352,10 @@ let alleViner = [];
 let vinerAvslutt = null; // avslutter aktivt Firestore-abonnement ved kjellerbytte
 let stoppSkann = null; // stopper aktiv kameraskanning ved rutebytte
 let ventendeSkannData = null; // { ean, bilde, viaRegistrerFlyt, harCacheTreff, ...kjenteFakta? } — bæres over fra #/registrer til skjemaet (#/ny)
+let brukerAvslutt = null; // avslutter abonnement på eget brukere/{uid}-dokument ved ut-/innlogging
+let sisteBrukerStatus = null; // forrige kjente status, for å unngå å restarte lastKjellereOgStart() på hver snapshot
+let ventendeAvslutt = null; // avslutter admins abonnement på ventende brukere ved utlogging
+let ventendeBrukere = []; // ventende brukere, kun populert/relevant for ADMIN_UID
 const app = document.getElementById('app');
 const bunnav = document.querySelector('.bunnav');
 
@@ -381,6 +385,13 @@ function rute() {
 function ruteIndre() {
   if (stoppSkann) { stoppSkann(); stoppSkann = null; }
 
+  // Sperre mot manuell hash-navigasjon (adresselinje/tilbake-knapp) forbi venteskjermen
+  // — bruker/aktivKjeller/alleViner er ikke satt opp før status er 'godkjent'.
+  if (bruker && sisteBrukerStatus !== 'godkjent') {
+    visVenteskjerm(sisteBrukerStatus || 'ventende');
+    return;
+  }
+
   const hash = location.hash || '#/';
   const [, path, param] = hash.match(/^#\/?([^/]*)\/?([^/]*)$/) || [];
 
@@ -409,6 +420,9 @@ function ruteIndre() {
   } else if (path === 'innstillinger') {
     settAktivNav('#/innstillinger');
     visInnstillinger();
+  } else if (path === 'godkjenninger') {
+    settAktivNav('#/innstillinger');
+    visGodkjenninger();
   } else if (path === 'registrer') {
     settAktivNav(param === 'brennevin' ? '#/brennevin' : '#/viner');
     visRegistrer(param === 'brennevin' ? 'Brennevin' : 'Vin');
@@ -457,10 +471,95 @@ async function lastKjellereOgStart() {
   abonnerPaAktivKjeller();
 }
 
+function visOppstartsfeil(err) {
+  console.error('[vinkjeller] Feil ved oppstart etter innlogging:', err);
+  app.innerHTML = '';
+  app.appendChild(el(`
+    <div class="side">
+      <h1>Noe gikk galt</h1>
+      <p class="tom">${escapeHtml(err.message || String(err))}</p>
+      <div class="knapperad"><button class="knapp knapp-primaer" id="prov-igjen-knapp">Prøv igjen</button></div>
+    </div>
+  `));
+  document.getElementById('prov-igjen-knapp').addEventListener('click', () => location.reload());
+}
+
+// Starter admins sanntidsabonnement på ventende brukere (badge + Godkjenninger-siden).
+// Kalles kun når innlogget bruker er ADMIN_UID.
+function startVentendeAbonnement() {
+  if (ventendeAvslutt) return;
+  ventendeAvslutt = BrukerDB.abonnerVentende((liste) => {
+    ventendeBrukere = liste;
+    oppdaterGodkjenningsBadge();
+    if (location.hash.startsWith('#/godkjenninger')) rute();
+  });
+}
+
+function oppdaterGodkjenningsBadge() {
+  const lenke = document.querySelector('.navlink[href="#/innstillinger"]');
+  if (!lenke) return;
+  let badge = lenke.querySelector('.nav-badge');
+  if (ventendeBrukere.length > 0) {
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'nav-badge';
+      lenke.appendChild(badge);
+    }
+    badge.textContent = String(ventendeBrukere.length);
+  } else if (badge) {
+    badge.remove();
+  }
+}
+
+// Abonnerer på eget brukere/{uid}-dokument og styrer om appen viser venteskjerm
+// eller går videre til vanlig kjeller-oppstart. Kjøres for alle innloggede, hver
+// gang innloggingsstatus endres.
+function startBrukerAbonnement() {
+  if (brukerAvslutt) brukerAvslutt();
+  brukerAvslutt = BrukerDB.abonnerEget(bruker.uid, (brukerDok) => {
+    if (!brukerDok) return; // venter på at BrukerDB.sikreEget() fullfører opprettelsen
+    if (brukerDok.status === 'godkjent') {
+      if (bruker.uid === ADMIN_UID) startVentendeAbonnement();
+      if (sisteBrukerStatus !== 'godkjent') {
+        sisteBrukerStatus = 'godkjent';
+        lastKjellereOgStart().catch(visOppstartsfeil);
+      }
+    } else {
+      sisteBrukerStatus = brukerDok.status;
+      visVenteskjerm(brukerDok.status);
+    }
+  });
+}
+
+function visVenteskjerm(status) {
+  visBunnav(false);
+  const avvist = status === 'avvist';
+  app.innerHTML = '';
+  app.appendChild(el(`
+    <div class="side innlogging-side">
+      <div class="innlogging-boks">
+        <div class="innlogging-ikon">${avvist ? '🚫' : '⏳'}</div>
+        <h1>${avvist ? 'Ikke godkjent' : 'Venter på godkjenning'}</h1>
+        <p class="hjelpetekst">${avvist
+          ? 'Forespørselen din om tilgang til Vinkjelleren ble avslått.'
+          : 'Sindre må godkjenne deg før du får tilgang. Du trenger ikke laste siden på nytt — du slippes automatisk videre så snart det skjer.'}</p>
+        <div class="knapperad">
+          <button class="knapp" id="logg-ut-knapp-venteskjerm">Logg ut</button>
+        </div>
+      </div>
+    </div>
+  `));
+  document.getElementById('logg-ut-knapp-venteskjerm').addEventListener('click', () => loggUt());
+}
+
 paInnloggingsendring((innloggetBruker) => {
   console.log('[vinkjeller] innloggingsstatus endret:', innloggetBruker ? innloggetBruker.uid : 'utlogget');
   bruker = innloggetBruker;
   if (vinerAvslutt) { vinerAvslutt(); vinerAvslutt = null; }
+  if (brukerAvslutt) { brukerAvslutt(); brukerAvslutt = null; }
+  if (ventendeAvslutt) { ventendeAvslutt(); ventendeAvslutt = null; }
+  sisteBrukerStatus = null;
+  ventendeBrukere = [];
 
   if (!bruker) {
     visBunnav(false);
@@ -470,18 +569,9 @@ paInnloggingsendring((innloggetBruker) => {
 
   visBunnav(false);
   app.innerHTML = '<div class="side"><p class="tom">Logger inn…</p></div>';
-  lastKjellereOgStart().catch((err) => {
-    console.error('[vinkjeller] Feil ved oppstart etter innlogging:', err);
-    app.innerHTML = '';
-    app.appendChild(el(`
-      <div class="side">
-        <h1>Noe gikk galt</h1>
-        <p class="tom">${escapeHtml(err.message || String(err))}</p>
-        <div class="knapperad"><button class="knapp knapp-primaer" id="prov-igjen-knapp">Prøv igjen</button></div>
-      </div>
-    `));
-    document.getElementById('prov-igjen-knapp').addEventListener('click', () => location.reload());
-  });
+  BrukerDB.sikreEget(bruker)
+    .then(() => startBrukerAbonnement())
+    .catch(visOppstartsfeil);
 });
 
 function visInnlogging() {
@@ -1483,6 +1573,17 @@ function visInnstillinger() {
         </label>
       </section>
 
+      ${bruker.uid === ADMIN_UID ? `
+      <section class="detaljseksjon">
+        <h2>👤 Godkjenninger</h2>
+        <p class="hjelpetekst">${ventendeBrukere.length
+          ? `${ventendeBrukere.length} ny(e) bruker(e) venter på godkjenning.`
+          : 'Ingen ventende forespørsler akkurat nå.'}</p>
+        <div class="knapperad">
+          <a class="knapp knapp-primaer" href="#/godkjenninger">Se godkjenninger</a>
+        </div>
+      </section>` : ''}
+
       <section class="detaljseksjon">
         <h2>Konto</h2>
         <p class="hjelpetekst">Innlogget som ${escapeHtml(bruker.displayName || bruker.email)}</p>
@@ -1631,6 +1732,49 @@ function visInnstillinger() {
       await VinDB.slettAlt(aktivKjeller.id);
       location.hash = '#/';
     }
+  });
+}
+
+// ---------- Visning: Godkjenninger (kun ADMIN_UID) ----------
+
+function visGodkjenninger() {
+  if (bruker.uid !== ADMIN_UID) { location.hash = '#/'; return; }
+  app.innerHTML = '';
+  app.appendChild(el(`
+    <div class="side">
+      <h1>Godkjenninger</h1>
+      ${!ventendeBrukere.length
+        ? '<p class="tom">Ingen ventende forespørsler akkurat nå.</p>'
+        : `<ul class="godkjenning-liste">${ventendeBrukere.map((b) => `
+            <li class="godkjenning-rad">
+              ${b.foto ? `<img class="godkjenning-foto" src="${escapeHtml(b.foto)}" alt="">` : '<span class="godkjenning-foto godkjenning-foto-tom">👤</span>'}
+              <div class="godkjenning-info">
+                <strong>${escapeHtml(b.navn || 'Ukjent')}</strong><br>
+                <span class="hjelpetekst">${escapeHtml(b.epost || '')}</span>
+              </div>
+              <div class="knapperad">
+                <button class="knapp knapp-primaer godkjenn-knapp" data-uid="${escapeHtml(b.id)}">Godkjenn</button>
+                <button class="knapp knapp-fare avvis-knapp" data-uid="${escapeHtml(b.id)}">Avvis</button>
+              </div>
+            </li>
+          `).join('')}</ul>`}
+      <div class="knapperad" style="margin-top:14px;"><a class="knapp" href="#/innstillinger">Tilbake</a></div>
+    </div>
+  `));
+
+  app.querySelectorAll('.godkjenn-knapp').forEach((knapp) => {
+    knapp.addEventListener('click', async () => {
+      knapp.disabled = true;
+      try { await BrukerDB.godkjenn(knapp.dataset.uid); }
+      catch (err) { alert(err.message); knapp.disabled = false; }
+    });
+  });
+  app.querySelectorAll('.avvis-knapp').forEach((knapp) => {
+    knapp.addEventListener('click', async () => {
+      knapp.disabled = true;
+      try { await BrukerDB.avvis(knapp.dataset.uid); }
+      catch (err) { alert(err.message); knapp.disabled = false; }
+    });
   });
 }
 

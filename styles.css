@@ -120,6 +120,7 @@ h2 {
 }
 
 .navlink {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -135,6 +136,22 @@ h2 {
 
 .navlink span { font-size: 1.2rem; }
 .navlink.aktiv { color: var(--bordo); background: rgba(107,16,48,0.08); }
+
+.nav-badge {
+  position: absolute;
+  top: 2px;
+  right: calc(50% - 20px);
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--rod);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
 
 /* ---------- Statistikk ---------- */
 
@@ -222,6 +239,38 @@ textarea { min-height: 70px; resize: vertical; }
   color: var(--tekst);
   align-items: center;
 }
+
+/* ---------- Godkjenninger ---------- */
+
+.godkjenning-liste { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+
+.godkjenning-rad {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  background: var(--kort-bg);
+  border: 1px solid var(--grense);
+  border-radius: var(--radius);
+  padding: 10px;
+  flex-wrap: wrap;
+}
+
+.godkjenning-foto {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.godkjenning-foto-tom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--grense);
+  font-size: 1.3rem;
+}
+
+.godkjenning-info { flex: 1; min-width: 140px; }
 
 .vinkort-bilde {
   width: 52px; height: 52px;

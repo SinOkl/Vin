@@ -4,10 +4,19 @@
 //   kjellere/{kjellerId}                { navn, eierUid, inviteKode, medlemmer: [uid, ...], opprettet }
 //   kjellere/{kjellerId}/viner/{vinId}   selve vin-/brennevindataen
 //   produkter/{ean}                     delt strekkode-cache (produktfakta, ikke kjeller-spesifikk)
+//   brukere/{uid}                       { navn, epost, foto, status: 'ventende'|'godkjent'|'avvist', opprettet }
 //
 // Kjellere er kun lesbare for egne medlemmer (håndhevet i firestore.rules) — derfor
 // går "bli med via kode" via den separate invitasjoner-samlingen, som kan slås opp
 // med eksakt kjent kode, men aldri listes ut i sin helhet.
+//
+// Nye brukere må godkjennes av ADMIN_UID (se firestore.rules) før de får lov til å
+// opprette eller bli med i noen kjeller — se BrukerDB under og gatingen i app.js.
+
+// Sindres egen Firebase Auth-uid (Authentication → Users i Firebase Console).
+// Samme "trygt å hardkode i git"-prinsipp som firebase-config.js. Må matche
+// ADMIN_UID i firestore.rules nøyaktig.
+export const ADMIN_UID = 'po4qTCXpl4W7AneJDHdc5ZpkMM22';
 
 import {
   collection, doc, getDoc, getDocs, addDoc, setDoc, deleteDoc, updateDoc,
@@ -173,5 +182,54 @@ export const ProduktDB = {
 
   async lagre(ean, produktFakta) {
     await setDoc(doc(db, 'produkter', ean), { ...produktFakta, oppdatert: serverTimestamp() }, { merge: true });
+  },
+};
+
+// ---------- Brukergodkjenning ----------
+// Alle nye brukere havner i 'ventende' ved første innlogging og må godkjennes av
+// ADMIN_UID før de kan opprette/bli med i noen kjeller (håndheves i firestore.rules).
+
+export const BrukerDB = {
+  // Oppretter eget brukere/{uid}-dokument første gang noen logger inn. Gjør ingenting
+  // om det allerede finnes (idempotent — trygt å kalle ved hver innlogging).
+  async sikreEget(bruker) {
+    const ref = doc(db, 'brukere', bruker.uid);
+    const snap = await getDoc(ref);
+    if (snap.exists()) return;
+    await setDoc(ref, {
+      navn: bruker.displayName || '',
+      epost: bruker.email || '',
+      foto: bruker.photoURL || '',
+      status: bruker.uid === ADMIN_UID ? 'godkjent' : 'ventende',
+      opprettet: serverTimestamp(),
+    });
+  },
+
+  // Abonnerer på eget brukere/{uid}-dokument. Kaller callback(null) om det ikke
+  // (ennå) finnes — skjer kun i det korte vinduet før sikreEget() har fullført.
+  abonnerEget(uid, callback) {
+    return onSnapshot(doc(db, 'brukere', uid), (snap) => {
+      callback(snap.exists() ? { id: snap.id, ...snap.data() } : null);
+    }, (feil) => {
+      console.error('Firestore-abonnement (eget brukerdokument) feilet:', feil);
+    });
+  },
+
+  // Kun ADMIN_UID har leserettighet på denne spørringen (se firestore.rules).
+  abonnerVentende(callback) {
+    const q = query(collection(db, 'brukere'), where('status', '==', 'ventende'));
+    return onSnapshot(q, (snap) => {
+      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    }, (feil) => {
+      console.error('Firestore-abonnement (ventende brukere) feilet:', feil);
+    });
+  },
+
+  async godkjenn(uid) {
+    await updateDoc(doc(db, 'brukere', uid), { status: 'godkjent' });
+  },
+
+  async avvis(uid) {
+    await updateDoc(doc(db, 'brukere', uid), { status: 'avvist' });
   },
 };

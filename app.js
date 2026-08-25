@@ -143,6 +143,14 @@ function formatKr(n) {
   return new Intl.NumberFormat('nb-NO', { style: 'currency', currency: 'NOK', maximumFractionDigits: 0 }).format(n);
 }
 
+// Prosentandel igjen i flasken som er i bruk (brennevin drikkes gjerne over uker/måneder,
+// i motsetning til vin — derfor et eget fyllnivå fremfor bare antall hele flasker).
+// Eldre poster mangler feltet — de regnes som fulle (100 %) helt til noen justerer glidebryteren.
+function hentFyllniva(v) {
+  const n = Number(v.fyllniva);
+  return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 100;
+}
+
 function drikkestatus(vin) {
   const ar = dataArsnr();
   const fra = vin.drikkeklarFra ? Number(vin.drikkeklarFra) : null;
@@ -685,6 +693,8 @@ function vinkortHtml(v) {
   const badge = v.drukketDato
     ? `<span class="status-badge status-drukket">Drukket ${escapeHtml(v.drukketDato)}</span>`
     : `<span class="status-badge ${status.klasse}">${status.label}</span>`;
+  const fyllniva = hentFyllniva(v);
+  const visFyllniva = v.kategori === 'Brennevin' && !v.drukketDato && fyllniva < 100;
   return `
     <a class="vinkort ${v.drukketDato ? 'drukket' : ''}" href="#/vin/${v.id}">
       <div class="vinkort-bilde">${v.bilde ? `<img src="${v.bilde}" alt="">` : plassholderSvg(v.kategori, v.type)}</div>
@@ -692,6 +702,7 @@ function vinkortHtml(v) {
         <div class="vinkort-navn">${escapeHtml(v.navn)}${v.argang ? ` <span class="argang">${escapeHtml(v.argang)}</span>` : ''}</div>
         <div class="vinkort-detalj">${escapeHtml(v.produsent || '')}${v.type ? ' · ' + escapeHtml(v.type) : ''}</div>
         <div class="vinkort-detalj">${v.antallFlasker || 0} flaske(r)${v.land ? ' · ' + escapeHtml(v.land) : ''}</div>
+        ${visFyllniva ? `<div class="fyllniva-bar-liten" title="${fyllniva}% igjen"><div class="fyllniva-bar-indre" style="width:${fyllniva}%"></div></div>` : ''}
         ${badge}
       </div>
     </a>
@@ -720,6 +731,17 @@ function visDetalj(id) {
       ${v.drukketDato
         ? `<span class="status-badge status-drukket">🍾 Drukket ${escapeHtml(v.drukketDato)}${v.drukketAv ? ' av ' + escapeHtml(v.drukketAv.navn) : ''}</span>`
         : `<span class="status-badge ${status.klasse}">${status.label}</span>`}
+
+      ${erBrennevin && !v.drukketDato ? `
+      <section class="detaljseksjon">
+        <h2>🧪 Fyllnivå</h2>
+        <div class="fyllniva-rad">
+          <input type="range" min="0" max="100" step="5" id="fyllniva-slider" value="${hentFyllniva(v)}">
+          <span class="fyllniva-tall" id="fyllniva-tall">${hentFyllniva(v)}%</span>
+        </div>
+        <p class="hjelpetekst">Hvor mye er igjen i flasken som er i bruk nå.</p>
+      </section>
+      ` : ''}
 
       <section class="detaljseksjon">
         <h2>Om ${erBrennevin ? 'flasken' : 'vinen'}</h2>
@@ -782,6 +804,17 @@ function visDetalj(id) {
     </div>
   `));
 
+  const fyllnivaSlider = document.getElementById('fyllniva-slider');
+  if (fyllnivaSlider) {
+    const fyllnivaTall = document.getElementById('fyllniva-tall');
+    fyllnivaSlider.addEventListener('input', () => {
+      fyllnivaTall.textContent = `${fyllnivaSlider.value}%`;
+    });
+    fyllnivaSlider.addEventListener('change', async () => {
+      await VinDB.lagre(aktivKjeller.id, { ...v, fyllniva: Number(fyllnivaSlider.value) });
+    });
+  }
+
   const leggTilFlaskeKnapp = document.getElementById('legg-til-flaske-knapp');
   if (leggTilFlaskeKnapp) {
     leggTilFlaskeKnapp.addEventListener('click', async () => {
@@ -834,6 +867,9 @@ function byttKategoriISkjema(skjema, kategori, forhandsvalgtType) {
   if (kategoriFelt) kategoriFelt.value = kategori;
   if (knappVin) knappVin.classList.toggle('aktiv', kategori === 'Vin');
   if (knappBrennevin) knappBrennevin.classList.toggle('aktiv', kategori === 'Brennevin');
+
+  const fyllnivaRad = document.getElementById('fyllniva-rad-skjema');
+  if (fyllnivaRad) fyllnivaRad.style.display = kategori === 'Brennevin' ? '' : 'none';
 
   const typer = TYPER[kategori] || TYPER['Vin'];
   const valgtType = typer.includes(forhandsvalgtType) ? forhandsvalgtType : typer[0];
@@ -1146,6 +1182,12 @@ function visSkjema(id, forhandsvalgtKategori) {
           <label>Antall flasker<input type="number" min="0" name="antallFlasker" value="${escapeHtml(v.antallFlasker)}"></label>
           <label>Volum (cl)<input type="number" min="0" name="volumCl" value="${escapeHtml(v.volumCl)}"></label>
         </div>
+        <label id="fyllniva-rad-skjema" style="${vKategori === 'Brennevin' ? '' : 'display:none'}">Fyllnivå — hvor mye er igjen i flasken som er i bruk
+          <div class="fyllniva-rad">
+            <input type="range" min="0" max="100" step="5" name="fyllniva" id="fyllniva-input" value="${hentFyllniva(v)}">
+            <span class="fyllniva-tall" id="fyllniva-input-tall">${hentFyllniva(v)}%</span>
+          </div>
+        </label>
         <div class="to-kolonner">
           <label>Pris per flaske (kr)<input type="number" min="0" name="innkjopspris" value="${escapeHtml(v.innkjopspris)}"></label>
           <label>Innkjøpsdato<input type="date" name="innkjopsdato" value="${escapeHtml(v.innkjopsdato)}"></label>
@@ -1219,6 +1261,10 @@ function visSkjema(id, forhandsvalgtKategori) {
   skjema.querySelector('select[name="type"]').addEventListener('change', (e) => {
     const kategoriNa = document.getElementById('kategori-felt').value;
     oppdaterLagringsplaceholder(kategoriNa, e.target.value);
+  });
+
+  document.getElementById('fyllniva-input').addEventListener('input', (e) => {
+    document.getElementById('fyllniva-input-tall').textContent = `${e.target.value}%`;
   });
 
   // Claude sin lim-inn-håndtering ser ut til å prioritere bildet og droppe teksten når
@@ -1295,9 +1341,10 @@ function visSkjema(id, forhandsvalgtKategori) {
     e.preventDefault();
     const fd = new FormData(skjema);
     const matparKategorier = fd.getAll('matpar');
+    const kategoriValgt = fd.get('kategori') || 'Vin';
     const nyVin = {
       ...v,
-      kategori: fd.get('kategori') || 'Vin',
+      kategori: kategoriValgt,
       navn: fd.get('navn').trim(),
       produsent: fd.get('produsent').trim(),
       argang: fd.get('argang').trim(),
@@ -1307,6 +1354,7 @@ function visSkjema(id, forhandsvalgtKategori) {
       druer: fd.get('druer').trim(),
       antallFlasker: Number(fd.get('antallFlasker')) || 0,
       volumCl: Number(fd.get('volumCl')) || 0,
+      fyllniva: kategoriValgt === 'Brennevin' ? Number(fd.get('fyllniva')) : '',
       innkjopspris: fd.get('innkjopspris') ? Number(fd.get('innkjopspris')) : '',
       innkjopsdato: fd.get('innkjopsdato'),
       kjoptHos: fd.get('kjoptHos').trim(),

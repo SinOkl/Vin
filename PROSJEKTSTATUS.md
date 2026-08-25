@@ -59,7 +59,8 @@ kjellere/{kjellerId}/viner/{vinId}  { kategori, navn, produsent, argang, type, l
                                        serveringstemperatur, drikkeklarFra, drikkeklarTil,
                                        matparKategorier, matparNotater, smaksnotater, vurdering,
                                        bilde (base64), drukketDato, lagtTilAv, drukketAv,
-                                       aiToppAr, aiBegrunnelse, aiKonfidens, drikkeklarKilde }
+                                       aiToppAr, aiBegrunnelse, aiKonfidens, drikkeklarKilde,
+                                       fyllniva (0–100, kun brennevin — mangler felt = tolkes som 100) }
 produkter/{ean}                     { kategori, navn, produsent, argang, type, land, region, druer,
                                        lagringstemperatur, lagringsfuktighet, serveringstemperatur,
                                        drikkeklarFra, drikkeklarTil, matparKategorier, matparNotater,
@@ -149,6 +150,20 @@ produkter/{ean}                     { kategori, navn, produsent, argang, type, l
     - Den manuelle «📷 Skann strekkode»-knappen inni skjemaet, den frittstående
       `#/skann`-siden og «Bruk AI-søk»-innstillingen er fjernet — skanning skjer nå alltid
       automatisk som del av legg-til-flyten i stedet for som et opt-in-tillegg
+21. **Justerbare UI-detaljer etter tilbakemelding**: stor sentrert rund «lukkerknapp» for å ta
+    bilde (var for liten/plassert feil for tommeltrykk), bilder beskjæres nå til 3:4-høyformat
+    (`.detaljbilde`, kamera-rammen) i stedet for bredt/lavt — passer bedre til vinetiketter.
+    Flasker uten eget bilde viser nå en fargekodet flaske-/glass-silhuett per type
+    (`plassholderSvg` i `app.js`, farger i `TYPE_FARGE`) i stedet for samme 🍷-emoji for alt
+    vin uansett type (så alt uten bilde så ut som rødvin)
+22. **Fyllnivå for brennevin**: eget felt `fyllniva` (0–100 %, kun relevant for kategorien
+    Brennevin — brennevin drikkes typisk over uker/måneder, ikke i én omgang som vin).
+    Glidebryter (`<input type="range">`) på detaljsiden (lagrer med én gang ved slipp,
+    `hentFyllniva`-hjelperen behandler eldre poster uten feltet som 100 % fulle) og i
+    legg til/rediger-skjemaet (vises/skjules dynamisk ved kategoribytte via
+    `byttKategoriISkjema`). Vinkort i listen viser en tynn fyllnivå-linje når < 100 %.
+    Bevisst *ikke* koblet til «antall flasker»-tellingen eller «Merk som drukket» —
+    to uavhengige konsepter (antall hele flasker vs. hvor mye som er igjen i den åpne)
 
 ## Kjente fallgruver (lært på den harde måten — ikke gjenta)
 

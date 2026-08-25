@@ -240,6 +240,20 @@ textarea { min-height: 70px; resize: vertical; }
 .vinkort-detalj { font-size: 0.8rem; color: var(--tekst-lys); }
 .argang { color: var(--gull); font-weight: 600; }
 
+.fyllniva-bar-liten {
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--grense);
+  margin: 4px 0;
+  overflow: hidden;
+}
+.fyllniva-bar-indre { height: 100%; background: var(--bordo); border-radius: 999px; }
+
+.fyllniva-rad { display: flex; align-items: center; gap: 10px; }
+.fyllniva-rad input[type="range"] { flex: 1; accent-color: var(--bordo); }
+.fyllniva-tall { font-weight: 700; font-size: 0.9rem; min-width: 3.2em; text-align: right; }
+
 .status-badge {
   display: inline-block;
   margin-top: 4px;

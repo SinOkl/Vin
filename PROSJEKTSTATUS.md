@@ -13,15 +13,14 @@ Google og deler samme "kjeller" (database), med sanntidsoppdatering.
 - **Firebase-prosjekt:** `vinkjeller-f21b1` (console.firebase.google.com)
 - **Prosjektmappe:** `C:\Users\sindr\Claude Code\vinkjeller`
 - **Nåværende versjon:** se `.versjon-merke` nederst i appen (index.html) — økes ved hver endring
-- **NB — mangler siste manuelle test:** punkt 20 under (ny legg-til-flyt) er ikke testet i en
-  ekte nettleser med ekte Google-innlogging og kamera ennå (bare kodegjennomgang + at
-  `app.js` laster uten feil). Test bilde→skann→skjema-flyten på telefon/PC før du stoler
-  100 % på at den fungerer i praksis.
 
 ## Status: fungerende og i bruk
 
 Innlogging, deling via invitasjonskode, og kjernefunksjonene er testet og virker.
-Se "Kjente mangler" nederst for det som gjenstår.
+Den nye legg-til-flyten (bilde → skann → skjema, punkt 20) og fyllnivå for brennevin
+(punkt 22) er live-testet på ekte telefon og justert flere runder ut fra reell bruk —
+se punkt 21, 23 og 24 for hva som ble rettet underveis. Se "Kjente mangler" nederst
+for det som gjenstår.
 
 ## Teknologi (ingen build-verktøy)
 

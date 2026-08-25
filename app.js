@@ -972,14 +972,16 @@ function visSkjema(id, forhandsvalgtKategori) {
         <p class="hjelpetekst">
           ${trengerIdentifikasjon
             ? `Fant ikke strekkoden <strong>${escapeHtml(forhandsutfyltEan)}</strong> i noen database. Skriv gjerne inn det du husker om flasken, og trykk knappen under — den kopierer forespørselen og åpner Claude i en ny fane, klar til å lime inn.`
-            : `Ta et bilde av etiketten over, og trykk knappen under — har du tatt et bilde,
-          blir det kopiert sammen med malen og Claude åpnes i en ny fane, klar til å lime
-          inn. Lim JSON-svaret AI-en gir tilbake inn i feltet under — én flaske fyller ut
-          skjemaet så du kan sjekke det før lagring, en hel liste importeres rett inn.`}
+            : `Ta et bilde av etiketten over, og trykk knappen under — den kopierer bildet og
+          åpner Claude i en ny fane. Lim inn bildet der, trykk så «Kopier tekst også» og lim
+          inn den i samme melding før du sender. Lim JSON-svaret AI-en gir tilbake inn i
+          feltet under — én flaske fyller ut skjemaet så du kan sjekke det før lagring, en
+          hel liste importeres rett inn.`}
         </p>
         ${trengerIdentifikasjon ? `<label>Det du husker om flasken (valgfritt)<textarea id="ai-notater-felt" rows="2" placeholder="f.eks. rødvin, italiensk, kjøpt på ferie"></textarea></label>` : ''}
         <div class="knapperad">
-          <button type="button" class="knapp" id="kopier-mal-knapp">${trengerIdentifikasjon ? 'Kopier & åpne Claude' : 'Kopier AI-mal'}</button>
+          <button type="button" class="knapp" id="kopier-mal-knapp">${trengerIdentifikasjon ? 'Kopier & åpne Claude' : 'Kopier AI-mal og åpne Claude'}</button>
+          ${!trengerIdentifikasjon ? `<button type="button" class="knapp" id="kopier-tekst-knapp" style="display:none">📋 Kopier tekst også</button>` : ''}
         </div>
         <details class="mal-detaljer">
           <summary>Vis malen</summary>
@@ -1076,7 +1078,9 @@ function visSkjema(id, forhandsvalgtKategori) {
       bildeForhandsvisning.src = bildeData;
       bildeForhandsvisning.style.display = '';
       const kopierMalKnapp = document.getElementById('kopier-mal-knapp');
-      if (kopierMalKnapp && !trengerIdentifikasjon) kopierMalKnapp.textContent = 'Kopier bilde + mal og åpne Claude';
+      const kopierTekstKnapp = document.getElementById('kopier-tekst-knapp');
+      if (kopierMalKnapp && !trengerIdentifikasjon) kopierMalKnapp.textContent = '1. Kopier bilde og åpne Claude';
+      if (kopierTekstKnapp) kopierTekstKnapp.style.display = '';
     }
   });
 
@@ -1091,6 +1095,14 @@ function visSkjema(id, forhandsvalgtKategori) {
     oppdaterLagringsplaceholder(kategoriNa, e.target.value);
   });
 
+  // Claude sin lim-inn-håndtering ser ut til å prioritere bildet og droppe teksten når
+  // begge ligger i samme utklipp — derfor kopieres de i to steg med hver sin knapp i
+  // stedet for i ett kombinert clipboard.write()-kall.
+  const feiletKopiering = () => {
+    document.querySelector('.mal-detaljer').open = true;
+    alert('Fikk ikke tilgang til utklippstavlen. Malen er vist under — merk og kopier den manuelt.');
+  };
+
   const kopierMalKnapp = document.getElementById('kopier-mal-knapp');
   if (kopierMalKnapp) {
     kopierMalKnapp.addEventListener('click', () => {
@@ -1103,30 +1115,25 @@ function visSkjema(id, forhandsvalgtKategori) {
         ? byggUkjendVinPrompt(forhandsutfyltEan, (document.getElementById('ai-notater-felt')?.value || '').trim())
         : AI_PROMPT_MAL;
 
-      const vellykketMedBilde = () => alert('Bilde og forespørsel er kopiert, og Claude åpnes i en ny fane — lim inn der.');
-      const vellykketUtenBilde = () => alert('Forespørselen er kopiert, og Claude åpnes i en ny fane — lim den inn der.');
-      const feilet = () => {
-        document.querySelector('.mal-detaljer').open = true;
-        alert('Fikk ikke tilgang til utklippstavlen. Malen er vist under — merk og kopier den manuelt.');
-      };
-      const fallTilbakeTilKunTekst = (arsak) => {
-        console.error('[vinkjeller] Kunne ikke kopiere bilde+tekst sammen, faller tilbake til kun tekst:', arsak);
-        navigator.clipboard.writeText(promptTekst).then(vellykketUtenBilde).catch(feilet);
-      };
-
-      // Har brukeren allerede tatt et bilde (kun mulig i "Legg til med AI"-flyten, siden
-      // strekkodeflyten ikke har noe bilde) — legg det ved på utklippstavlen sammen med
-      // teksten, som to representasjoner av samme utklipp.
       if (bildeData && !trengerIdentifikasjon) {
-        jpegDataUrlTilPngBlob(bildeData).then((pngBlob) => navigator.clipboard.write([
-          new ClipboardItem({
-            'text/plain': new Blob([promptTekst], { type: 'text/plain' }),
-            'image/png': pngBlob,
-          }),
-        ])).then(vellykketMedBilde).catch(fallTilbakeTilKunTekst);
+        jpegDataUrlTilPngBlob(bildeData)
+          .then((pngBlob) => navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]))
+          .then(() => alert('Bildet er kopiert, og Claude åpnes i en ny fane. Lim det inn der, trykk så «Kopier tekst også» og lim inn teksten i samme melding.'))
+          .catch(feiletKopiering);
       } else {
-        navigator.clipboard.writeText(promptTekst).then(vellykketUtenBilde).catch(feilet);
+        navigator.clipboard.writeText(promptTekst)
+          .then(() => alert(trengerIdentifikasjon ? 'Forespørselen er kopiert, og Claude åpnes i en ny fane — lim den inn der.' : 'Malen er kopiert, og Claude åpnes i en ny fane — lim den inn der.'))
+          .catch(feiletKopiering);
       }
+    });
+  }
+
+  const kopierTekstKnapp = document.getElementById('kopier-tekst-knapp');
+  if (kopierTekstKnapp) {
+    kopierTekstKnapp.addEventListener('click', () => {
+      navigator.clipboard.writeText(AI_PROMPT_MAL)
+        .then(() => alert('Malen er kopiert — lim den inn i samme melding som bildet i Claude.'))
+        .catch(feiletKopiering);
     });
   }
 

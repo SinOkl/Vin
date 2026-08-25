@@ -44,6 +44,42 @@ function hentForslag(kategori, type) {
   return gruppe[type] || gruppe['Annet'];
 }
 
+// Farge per type, brukt av plassholderSvg under — gir hver type sin egen fargede
+// flaske-/glass-silhuett i stedet for at alt uten eget bilde ser ut som rødvin.
+const TYPE_FARGE = {
+  'Rødvin': '#6b1030',
+  'Sider': '#9caa3c',
+  'Hvitvin': '#e3d48a',
+  'Rosévin': '#e2a1a6',
+  'Musserende': '#d9c46a',
+  'Dessertvin/Portvin': '#5a1f22',
+  'Whisky': '#b5762a',
+  'Vodka': '#c7d3d6',
+  'Gin': '#8fae8f',
+  'Rom': '#7a4a1f',
+  'Cognac/Brandy': '#8a4a1f',
+  'Akevitt': '#d9c98a',
+  'Tequila': '#d3b768',
+  'Likør': '#a13d63',
+};
+
+// Plassholder-bilde (inline SVG) for flasker uten eget bilde — flaskesilhuett for vin,
+// glass-silhuett for brennevin, farget etter type slik at ulike typer skiller seg visuelt.
+function plassholderSvg(kategori, type) {
+  const farge = TYPE_FARGE[type] || (kategori === 'Brennevin' ? '#8a8a8a' : '#7a4a6b');
+  const merkelapp = escapeHtml(type || kategori || '');
+  return kategori === 'Brennevin'
+    ? `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${merkelapp}">
+        <rect x="32" y="36" width="36" height="48" rx="4" fill="${farge}"/>
+        <rect x="32" y="36" width="36" height="9" fill="${farge}" opacity="0.55"/>
+      </svg>`
+    : `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${merkelapp}">
+        <rect x="44" y="6" width="12" height="22" rx="2" fill="${farge}"/>
+        <path d="M40 28 C40 28 36 39 36 49 L36 89 C36 93 39 96 43 96 L57 96 C61 96 64 93 64 89 L64 49 C64 39 60 28 60 28 Z" fill="${farge}"/>
+        <rect x="34" y="54" width="32" height="17" fill="#ffffff" opacity="0.18"/>
+      </svg>`;
+}
+
 const dataArsnr = () => new Date().getFullYear();
 
 // Delt av begge AI-malene under, slik at de alltid ber om nøyaktig samme JSON-form —
@@ -646,13 +682,12 @@ function renderVinlisteResultat() {
 
 function vinkortHtml(v) {
   const status = drikkestatus(v);
-  const ikon = v.kategori === 'Brennevin' ? '🥃' : '🍷';
   const badge = v.drukketDato
     ? `<span class="status-badge status-drukket">Drukket ${escapeHtml(v.drukketDato)}</span>`
     : `<span class="status-badge ${status.klasse}">${status.label}</span>`;
   return `
     <a class="vinkort ${v.drukketDato ? 'drukket' : ''}" href="#/vin/${v.id}">
-      <div class="vinkort-bilde">${v.bilde ? `<img src="${v.bilde}" alt="">` : ikon}</div>
+      <div class="vinkort-bilde">${v.bilde ? `<img src="${v.bilde}" alt="">` : plassholderSvg(v.kategori, v.type)}</div>
       <div class="vinkort-info">
         <div class="vinkort-navn">${escapeHtml(v.navn)}${v.argang ? ` <span class="argang">${escapeHtml(v.argang)}</span>` : ''}</div>
         <div class="vinkort-detalj">${escapeHtml(v.produsent || '')}${v.type ? ' · ' + escapeHtml(v.type) : ''}</div>
@@ -680,7 +715,7 @@ function visDetalj(id) {
   app.appendChild(el(`
     <div class="side">
       <a href="${tilbakeHref}" class="tilbake">← Tilbake til ${erBrennevin ? 'brennevin' : 'viner'}</a>
-      ${v.bilde ? `<img class="detaljbilde" src="${v.bilde}" alt="">` : ''}
+      ${v.bilde ? `<img class="detaljbilde" src="${v.bilde}" alt="">` : `<div class="detaljbilde detaljbilde-plassholder">${plassholderSvg(kategori, v.type)}</div>`}
       <h1>${ikon} ${escapeHtml(v.navn)}${v.argang ? ` <span class="argang">${escapeHtml(v.argang)}</span>` : ''}</h1>
       ${v.drukketDato
         ? `<span class="status-badge status-drukket">🍾 Drukket ${escapeHtml(v.drukketDato)}${v.drukketAv ? ' av ' + escapeHtml(v.drukketAv.navn) : ''}</span>`
@@ -900,11 +935,11 @@ function registrerBildeSteg(forhandsvalgtKategori) {
         <div class="kamera-ramme" aria-hidden="true"></div>
       </div>
       <p class="hjelpetekst" id="foto-status">Tar bilde av etiketten</p>
-      <div class="knapperad">
-        <button type="button" class="knapp knapp-primaer" id="foto-ta-knapp" disabled>📸 Ta bilde</button>
-        <button type="button" class="knapp" id="foto-hopp-knapp">Hopp over bilde</button>
+      <div class="lukker-rad">
+        <button type="button" class="knapp-lukker" id="foto-ta-knapp" disabled aria-label="Ta bilde"></button>
       </div>
       <div class="knapperad">
+        <button type="button" class="knapp" id="foto-hopp-knapp">Hopp over bilde</button>
         <a class="knapp" href="#/${forhandsvalgtKategori === 'Brennevin' ? 'brennevin' : 'viner'}">Avbryt</a>
       </div>
     </div>
@@ -936,10 +971,19 @@ function registrerBildeSteg(forhandsvalgtKategori) {
   });
 
   taKnapp.addEventListener('click', async () => {
+    // Beskjærer til samme høyreist 3:4-format som rammen på skjermen viser, slik at bildet
+    // som lagres faktisk matcher det brukeren ser — og passer bedre til en vinetikett enn
+    // hele (ofte bredere) kamerabildet.
+    const RAMME_ASPEKT = 3 / 4;
+    const vb = video.videoWidth, vh = video.videoHeight;
+    let bredde = vb, hoyde = vb / RAMME_ASPEKT;
+    if (hoyde > vh) { hoyde = vh; bredde = vh * RAMME_ASPEKT; }
+    const sx = (vb - bredde) / 2, sy = (vh - hoyde) / 2;
+
     const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
+    canvas.width = bredde;
+    canvas.height = hoyde;
+    canvas.getContext('2d').drawImage(video, sx, sy, bredde, hoyde, 0, 0, bredde, hoyde);
     const bildeData = await skalerOgKomprimerDataUrl(canvas.toDataURL('image/jpeg', 0.92));
     gaVidereTilSkann(bildeData);
   });

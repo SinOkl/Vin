@@ -839,9 +839,14 @@ function visDetalj(id) {
     });
   }
 
+  // Knappen leser v.antallFlasker fra denne rendringen (lukket over i klikk-handleren) —
+  // uten å deaktivere den med én gang ville rask gjentatt trykking (f.eks. for å gå fra
+  // 1 til 8 flasker) bare skrevet det SAMME +1-resultatet om igjen for hvert trykk, siden
+  // siden ikke rekker å tegnes på nytt med fersk v mellom hvert trykk.
   const leggTilFlaskeKnapp = document.getElementById('legg-til-flaske-knapp');
   if (leggTilFlaskeKnapp) {
     leggTilFlaskeKnapp.addEventListener('click', async () => {
+      leggTilFlaskeKnapp.disabled = true;
       await VinDB.lagre(aktivKjeller.id, { ...v, antallFlasker: (Number(v.antallFlasker) || 0) + 1 });
     });
   }
@@ -849,6 +854,7 @@ function visDetalj(id) {
   const taUtFlaskeKnapp = document.getElementById('ta-ut-flaske-knapp');
   if (taUtFlaskeKnapp) {
     taUtFlaskeKnapp.addEventListener('click', async () => {
+      taUtFlaskeKnapp.disabled = true;
       await VinDB.lagre(aktivKjeller.id, { ...v, antallFlasker: Math.max(0, (Number(v.antallFlasker) || 0) - 1) });
     });
   }

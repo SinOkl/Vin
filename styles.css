@@ -458,6 +458,7 @@ textarea { min-height: 70px; resize: vertical; }
 .knapp-primaer { background: var(--bordo); color: white; border-color: var(--bordo); }
 .knapp-fare { background: #fdecea; color: var(--rod); border-color: #f3b9b3; }
 .knapp-gull { background: rgba(201,165,92,0.16); color: #8a6a26; border-color: rgba(201,165,92,0.4); }
+.knapp:disabled { opacity: 0.55; cursor: default; }
 
 @media (prefers-color-scheme: dark) {
   :root {

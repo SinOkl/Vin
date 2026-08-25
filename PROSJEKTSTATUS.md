@@ -171,6 +171,15 @@ produkter/{ean}                     { kategori, navn, produsent, argang, type, l
     (`beregnStats`-hjelperen for summering av lister). I tillegg viser nå Vin- og
     Brennevin-fanen hver sin «X flaske(r) · estimert verdi Y kr»-linje for egen kategori,
     ikke bare den kombinerte summen på oversikten
+24. **Fikset race i «+ Legg til flaske»/«− Tatt ut en flaske»**: knappene leser
+    `v.antallFlasker` fra rendringen de ble tegnet i (lukket over i klikk-handleren) og
+    skriver `+1`/`−1` til Firestore. Trykker man raskt flere ganger — f.eks. for å gå fra
+    1 til 8 flasker — rekker siden ikke tegnes på nytt med fersk `v` mellom hvert trykk, så
+    hvert trykk regnet `+1` fra det SAMME gamle tallet i stedet for å akkumulere (så antallet,
+    og dermed «estimert verdi», ikke gikk opp som forventet). Fikset ved å deaktivere knappen
+    med én gang den trykkes (`knapp:disabled`-stil lagt til), slik at nye trykk må vente til
+    en fersk rendring (med ny, ikke-deaktivert knapp) er klar. Merk: å redigere «Antall
+    flasker» direkte i skjemaet er upåvirket av dette — det er alltid ett atomisk skriv
 
 ## Kjente fallgruver (lært på den harde måten — ikke gjenta)
 

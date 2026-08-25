@@ -101,14 +101,22 @@ produkter/{ean}                     { kategori, navn, produsent, argang, type, l
     «+ legg til flaske» i stedet for ny post), deretter den delte strekkode-cachen
     (`produkter/{ean}` i Firestore, se `db.js` → `ProduktDB`) — kjent fra før gir
     momentant utfylt skjema. Ukjent strekkode + innstillingen «Bruk AI-søk» (av som
-    standard) tilbyr en egen AI-identifikasjons-prompt (Mal B), med samme
-    kopier-til-utklippstavle/lim-inn-JSON-mønster som «Legg til med AI» — nå med
-    tolerant JSON-parsing (`parseAiJson`) som strips \`\`\`json-kodeblokker. Alle
-    lagringer av en vin med strekkode oppdaterer den delte cachen, slik at neste
-    skann av samme flaske — av hvem som helst i appen — treffer momentant. Ingen
-    ekstern API-avhengighet (se «Kjente mangler» for hvorfor direkte
-    Vinmonopolet-oppslag ble valgt bort). AI-genererte drikkevindu-estimater merkes
-    tydelig som estimat i detaljvisningen (`drikkeklarKilde: 'ai'`)
+    standard, se Innstillinger) tilbyr AI-identifikasjon. Alle lagringer av en vin
+    med strekkode oppdaterer den delte cachen, slik at neste skann av samme flaske —
+    av hvem som helst i appen — treffer momentant. Ingen ekstern API-avhengighet (se
+    «Kjente mangler» for hvorfor direkte Vinmonopolet-oppslag ble valgt bort).
+    AI-genererte drikkevindu-estimater merkes tydelig som estimat i detaljvisningen
+    (`drikkeklarKilde: 'ai'`)
+19. **AI-mal og -identifikasjon delt/samkjørt, og «kopier + åpne Claude» i appen**:
+    `AI_JSON_SKJEMA_OG_REGLER` er delt mellom `AI_PROMPT_MAL` (bilde-basert) og
+    `byggUkjendVinPrompt` (strekkode-basert) slik at begge alltid ber om nøyaktig
+    samme felter og kan parses likt (inkl. tolerant `parseAiJson` som strips
+    \`\`\`json-kodeblokker). Knappen(e) i AI-seksjonen kopierer nå til utklippstavlen
+    OG åpner `https://claude.ai/new` i en ny fane i samme trykk — sparer brukeren for
+    å bytte fane manuelt. For strekkode-flyten (kun tekst) er dette ett trykk. For
+    bilde-flyten er det to knapper i rekkefølge — «1. Kopier bilde og åpne Claude»,
+    deretter «Kopier tekst også» — fordi Claude sin lim-inn-håndtering viste seg å
+    plukke bildet og droppe teksten når begge lå i samme utklipp (se fallgruve under)
 
 ## Kjente fallgruver (lært på den harde måten — ikke gjenta)
 
@@ -131,6 +139,18 @@ produkter/{ean}                     { kategori, navn, produsent, argang, type, l
   faktiske GitHub Pages-URL-en, ikke `localhost`.
 - **Push til GitHub**: `git` er tilgjengelig og autentisert på denne maskinen (fungerer uten
   ekstra oppsett) — `gh` CLI er derimot ikke installert.
+- **`navigator.clipboard`/`window.open` krever et ekte, synkront brukertrykk.** Begge kastes
+  ut («NotAllowedError», eller popupen blokkeres) hvis det er en `await` (eller annen
+  async-runde) mellom klikket og kallet — kall dem synkront først i klikk-handleren, gjør
+  eventuell async-jobb (bildekomprimering, Firestore-oppslag) enten før (så resultatet
+  ligger klart) eller vit at man mister brukerhandlingen om man venter etterpå.
+- **`navigator.clipboard.write()` med bilde: bruk `image/png`, ikke `image/jpeg`** — ikke
+  alle nettlesere (bl.a. Safari) godtar jpeg som representasjon i et `ClipboardItem`.
+  Konverter via `<canvas>.toBlob(cb, 'image/png')` rett før kopiering, ikke lagringsformatet.
+- **Kombinert tekst+bilde i ett `ClipboardItem` fungerer teknisk, men Claude sin
+  lim-inn-håndtering plukker bildet og dropper teksten** når begge er representasjoner av
+  samme utklipp. Løsningen ble to separate knapper/kopieringer (bilde for seg, tekst for
+  seg) i stedet for å stole på at mottakeren håndterer flere formater i samme utklipp.
 
 ## Kjente mangler / naturlige neste steg
 

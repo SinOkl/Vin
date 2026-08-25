@@ -1120,8 +1120,8 @@ function visSkjema(id, forhandsvalgtKategori) {
         <button type="button" class="visning-knapp ${vKategori === 'Brennevin' ? 'aktiv' : ''}" id="knapp-kat-brennevin">🥃 Brennevin</button>
       </div>
 
-      <label>Bilde av etikett
-        <input type="file" accept="image/*" capture="environment" id="bilde-input">
+      <label>Bilde av etikett (kamera eller fra galleriet)
+        <input type="file" accept="image/*" id="bilde-input">
       </label>
       <img id="bilde-forhandsvisning" class="detaljbilde" src="${v.bilde || ''}" style="${v.bilde ? '' : 'display:none'}">
 

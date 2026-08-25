@@ -78,22 +78,25 @@ Regler:
 - "innkjopspris" er prisen PER FLASKE i kroner. Søk ALLTID opp produktet på vinmonopolet.no og bruk utsalgsprisen derfra — ikke la dette feltet stå tomt bare fordi prisen ikke står på etiketten. Oppgir jeg selv en annen pris i meldingen (f.eks. faktisk betalt pris, tilbud, eller kjøpt i utlandet), bruk min pris i stedet for Vinmonopolet sin. Finner du ikke produktet på Vinmonopolet i det hele tatt, skriv "" — ikke gjett et tall.
 - Bruk nettsøk til å dobbeltsjekke fakta om produktet (druer, region, drikkevindu, smaksprofil, pris) fremfor å basere deg kun på synlig tekst på etiketten — det gir mer presise svar.`;
 
-const AI_PROMPT_MAL = `Du er ekspert på vin og brennevin. Jeg skal registrere en flaske i katalogen min. Se på bildet/beskrivelsen jeg gir deg, og bruk nettsøk til å slå opp produktet: bekreft fakta som druesammensetning, region, typisk drikkevindu og smaksprofil — ikke bare gjett ut fra det som står på etiketten — og søk alltid opp utsalgsprisen på vinmonopolet.no. Svar deretter KUN med gyldig JSON (ingen forklaringstekst, ingen kodeblokk-merking rundt) i nøyaktig dette formatet:
+function naturligListe(deler) {
+  const gyldige = deler.filter(Boolean);
+  if (gyldige.length <= 1) return gyldige.join('');
+  return gyldige.slice(0, -1).join(', ') + ' og ' + gyldige[gyldige.length - 1];
+}
+
+// Brukt av «Kopier kode og åpne Claude»-knappen i legg-til-flyten (bilde + evt. strekkode).
+// Både ean og bilde er valgfrie — flyten fortsetter selv om kamera/skanning feiler eller blir
+// hoppet over, så prompten tilpasser teksten etter hva vi faktisk har med oss inn hit.
+function byggRegistrerPrompt(ean, brukerNotater, harBilde) {
+  const grunnlag = harBilde
+    ? 'Jeg limer inn et bilde av etiketten i denne meldingen.'
+    : 'Jeg har ikke noe bilde av etiketten denne gangen, kun det jeg skriver under.';
+  const identGrunnlag = naturligListe([harBilde && 'bildet', ean && 'strekkoden', 'det jeg skriver under']);
+  return `Du er ekspert på vin og brennevin. Jeg skal registrere en flaske i katalogen min. ${grunnlag}${ean ? ` Jeg har også skannet strekkoden (EAN): ${ean}.` : ''} Bruk ${identGrunnlag} til å identifisere flasken, og bruk nettsøk til å bekrefte fakta som druesammensetning, region, typisk drikkevindu og smaksprofil — ikke bare gjett — og søk alltid opp utsalgsprisen på vinmonopolet.no. Svar deretter KUN med gyldig JSON (ingen forklaringstekst, ingen kodeblokk-merking rundt) i nøyaktig dette formatet:
 
 ${AI_JSON_SKJEMA_OG_REGLER}
-- Har du ikke tilgang til nettsøk i det hele tatt: gjør så godt du kan ut fra bildet/beskrivelsen og din egen kunnskap, og skriv "" på felt (inkludert innkjopspris) du er usikker på — ikke gjett blindt.
+- Har du ikke tilgang til nettsøk i det hele tatt, eller finner ikke produktet: gjør så godt du kan ut fra det jeg skriver under, og skriv "" på felt (inkludert innkjopspris) du er usikker på — ikke gjett blindt.
 
-Her er flasken: [lim inn bilde av etiketten, eller beskriv den (navn, produsent, årgang) her]`;
-
-// Samme skjema/regler som AI_PROMPT_MAL over, bare med strekkode + egne notater som
-// identifikasjonsgrunnlag i stedet for et bilde av etiketten.
-function byggUkjendVinPrompt(ean, brukerNotater) {
-  return `Du er ekspert på vin og brennevin. Jeg har skannet strekkoden til en flaske jeg skal registrere i katalogen min, men fant den ikke i noen database. Bruk nettsøk på strekkoden (EAN) og det jeg eventuelt vet om flasken til å identifisere den, og slå opp produktet: bekreft fakta som druesammensetning, region, typisk drikkevindu og smaksprofil — ikke bare gjett — og søk alltid opp utsalgsprisen på vinmonopolet.no. Svar deretter KUN med gyldig JSON (ingen forklaringstekst, ingen kodeblokk-merking rundt) i nøyaktig dette formatet:
-
-${AI_JSON_SKJEMA_OG_REGLER}
-- Har du ikke tilgang til nettsøk i det hele tatt, eller finner ikke strekkoden: gjør så godt du kan ut fra det jeg skriver under, og skriv "" på felt (inkludert innkjopspris) du er usikker på — ikke gjett blindt.
-
-Strekkode (EAN): ${ean}
 Det jeg selv vet om flasken: ${brukerNotater || '(ingenting mer)'}`;
 }
 
@@ -115,30 +118,36 @@ function drikkestatus(vin) {
   return { label: 'Klar til drikking', klasse: 'status-klar' };
 }
 
+// Skalerer ned og komprimerer et bilde som allerede er en data-URL (brukt både for opplastede
+// filer og for bilder tatt direkte med kamera-canvasen i legg-til-flyten).
+function skalerOgKomprimerDataUrl(dataUrl, maxDim = 900, kvalitet = 0.75) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onerror = reject;
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > height && width > maxDim) {
+        height = Math.round((height * maxDim) / width);
+        width = maxDim;
+      } else if (height > maxDim) {
+        width = Math.round((width * maxDim) / height);
+        height = maxDim;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', kvalitet));
+    };
+    img.src = dataUrl;
+  });
+}
+
 function komprimerBilde(file, maxDim = 900, kvalitet = 0.75) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = reject;
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = reject;
-      img.onload = () => {
-        let { width, height } = img;
-        if (width > height && width > maxDim) {
-          height = Math.round((height * maxDim) / width);
-          width = maxDim;
-        } else if (height > maxDim) {
-          width = Math.round((width * maxDim) / height);
-          height = maxDim;
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', kvalitet));
-      };
-      img.src = reader.result;
-    };
+    reader.onload = () => resolve(skalerOgKomprimerDataUrl(reader.result, maxDim, kvalitet));
     reader.readAsDataURL(file);
   });
 }
@@ -279,7 +288,7 @@ let aktivKjeller = null;
 let alleViner = [];
 let vinerAvslutt = null; // avslutter aktivt Firestore-abonnement ved kjellerbytte
 let stoppSkann = null; // stopper aktiv kameraskanning ved rutebytte
-let ventendeSkannData = null; // { ean, ...kjenteFakta? } — bæres over fra #/skann til skjemaet
+let ventendeSkannData = null; // { ean, bilde, viaRegistrerFlyt, harCacheTreff, ...kjenteFakta? } — bæres over fra #/registrer til skjemaet (#/ny)
 const app = document.getElementById('app');
 const bunnav = document.querySelector('.bunnav');
 
@@ -337,8 +346,9 @@ function ruteIndre() {
   } else if (path === 'innstillinger') {
     settAktivNav('#/innstillinger');
     visInnstillinger();
-  } else if (path === 'skann') {
-    visSkann();
+  } else if (path === 'registrer') {
+    settAktivNav(param === 'brennevin' ? '#/brennevin' : '#/viner');
+    visRegistrer(param === 'brennevin' ? 'Brennevin' : 'Vin');
   } else {
     visOversikt();
   }
@@ -584,7 +594,7 @@ function visVinliste(kategori) {
         </div>
       </div>
       <div class="knapperad">
-        <a class="knapp knapp-primaer" href="#/ny${erBrennevin ? '/brennevin' : ''}">+ Legg til ${erBrennevin ? 'brennevin' : 'vin'}</a>
+        <a class="knapp knapp-primaer" href="#/registrer${erBrennevin ? '/brennevin' : ''}">📷 Legg til ${erBrennevin ? 'brennevin' : 'vin'} med bilde og skanning</a>
       </div>
       <div id="vinliste-resultat"></div>
     </div>
@@ -842,13 +852,14 @@ function fyllSkjemaFraVin(skjema, data) {
   });
 }
 
-// ---------- Visning: Skann strekkode ----------
+// ---------- Visning: Legg til med bilde + skanning ----------
 
-// Tar imot en avlest/inntastet EAN. Finnes den allerede i egen kjeller, åpnes den vinen
-// i stedet for å opprette en duplikat. Ellers sjekkes den delte strekkode-cachen —
-// finnes fakta om flasken der fra før (noen andre har identifisert den), forhåndsutfylles
-// hele skjemaet. Uansett bæres EAN-en (og eventuelle kjente fakta) videre til skjemaet.
-async function handterSkannetEan(ean) {
+// Tar imot en avlest/inntastet EAN fra legg-til-flyten. Finnes den allerede i egen kjeller,
+// åpnes den vinen i stedet for å opprette en duplikat. Ellers sjekkes den delte
+// strekkode-cachen — finnes fakta om flasken der fra før (noen andre har identifisert den),
+// bæres de med videre slik at skjemaet forhåndsutfylles og AI ikke er nødvendig. Uansett
+// bæres EAN-en og bildet som ble tatt videre til skjemaet (#/ny).
+async function handterRegistrertEan(ean, bildeData) {
   const funnet = alleViner.find((v) => v.ean === ean && !v.drukketDato);
   if (funnet) {
     alert(`«${funnet.navn}» finnes allerede i kjelleren. Bruk «+ Legg til flaske» på vinen for å øke antallet.`);
@@ -861,19 +872,92 @@ async function handterSkannetEan(ean) {
   } catch (err) {
     console.error('[vinkjeller] Kunne ikke slå opp strekkode i delt cache:', err);
   }
-  ventendeSkannData = { ean, ...(kjenteFakta || {}) };
+  ventendeSkannData = {
+    ean,
+    bilde: bildeData || '',
+    viaRegistrerFlyt: true,
+    harCacheTreff: !!kjenteFakta,
+    ...(kjenteFakta || {}),
+  };
   location.hash = '#/ny';
 }
 
-function visSkann() {
+// Steg 1: kamera rettet mot etiketten med en firkant-ramme som veiledning for hva som blir
+// synlig i appen. Går automatisk videre til strekkodeskanning når bildet er tatt (eller
+// steget er hoppet over).
+function visRegistrer(forhandsvalgtKategori) {
+  registrerBildeSteg(forhandsvalgtKategori);
+}
+
+function registrerBildeSteg(forhandsvalgtKategori) {
+  const ordKategori = forhandsvalgtKategori === 'Brennevin' ? 'brennevin' : 'vin';
   app.innerHTML = '';
   app.appendChild(el(`
     <div class="side">
-      <h1>📷 Skann strekkode</h1>
-      <p class="hjelpetekst" id="skann-status">Ber om tilgang til kameraet…</p>
+      <h1>📷 Legg til ${ordKategori}</h1>
+      <div class="kamera-boks">
+        <video id="foto-video" class="skann-video" autoplay playsinline muted></video>
+        <div class="kamera-ramme" aria-hidden="true"></div>
+      </div>
+      <p class="hjelpetekst" id="foto-status">Tar bilde av etiketten</p>
+      <div class="knapperad">
+        <button type="button" class="knapp knapp-primaer" id="foto-ta-knapp" disabled>📸 Ta bilde</button>
+        <button type="button" class="knapp" id="foto-hopp-knapp">Hopp over bilde</button>
+      </div>
+      <div class="knapperad">
+        <a class="knapp" href="#/${forhandsvalgtKategori === 'Brennevin' ? 'brennevin' : 'viner'}">Avbryt</a>
+      </div>
+    </div>
+  `));
+
+  const video = document.getElementById('foto-video');
+  const status = document.getElementById('foto-status');
+  const taKnapp = document.getElementById('foto-ta-knapp');
+  const hoppKnapp = document.getElementById('foto-hopp-knapp');
+  let stream = null;
+
+  const gaVidereTilSkann = (bildeData) => {
+    if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
+    stoppSkann = null;
+    registrerSkannSteg(forhandsvalgtKategori, bildeData);
+  };
+
+  hoppKnapp.addEventListener('click', () => gaVidereTilSkann(''));
+
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then((s) => {
+    if (!location.hash.startsWith('#/registrer')) { s.getTracks().forEach((t) => t.stop()); return; } // rakk å navigere bort før kameraet var klart
+    stream = s;
+    video.srcObject = stream;
+    taKnapp.disabled = false;
+    stoppSkann = () => { if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; } };
+  }).catch((err) => {
+    console.error('[vinkjeller] Kunne ikke starte kameraet for bilde:', err);
+    status.textContent = 'Fikk ikke tilgang til kameraet. Du kan hoppe over bildet og fortsette.';
+  });
+
+  taKnapp.addEventListener('click', async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    const bildeData = await skalerOgKomprimerDataUrl(canvas.toDataURL('image/jpeg', 0.92));
+    gaVidereTilSkann(bildeData);
+  });
+}
+
+// Steg 2: strekkodeskanning, starter automatisk rett etter bildet. Treff sjekkes mot egen
+// kjeller og den delte strekkode-cachen i handterRegistrertEan over.
+function registrerSkannSteg(forhandsvalgtKategori, bildeData) {
+  const ordKategori = forhandsvalgtKategori === 'Brennevin' ? 'brennevin' : 'vin';
+  app.innerHTML = '';
+  app.appendChild(el(`
+    <div class="side">
+      <h1>📷 Legg til ${ordKategori}</h1>
+      ${bildeData ? `<img class="detaljbilde" src="${bildeData}" alt="Bilde av etiketten">` : ''}
+      <p class="hjelpetekst" id="skann-status">Skanner strekkode</p>
       <video id="skann-video" class="skann-video" autoplay playsinline muted></video>
       <div class="knapperad">
-        <a class="knapp" href="#/ny">Avbryt</a>
+        <button type="button" class="knapp" id="skann-hopp-knapp">Hopp over skanning</button>
       </div>
       <details class="mal-detaljer" id="skann-manuell-detaljer">
         <summary>Skriv inn strekkode manuelt i stedet</summary>
@@ -885,28 +969,33 @@ function visSkann() {
     </div>
   `));
 
+  document.getElementById('skann-hopp-knapp').addEventListener('click', () => {
+    ventendeSkannData = { ean: '', bilde: bildeData || '', viaRegistrerFlyt: true };
+    location.hash = '#/ny';
+  });
+
   document.getElementById('skann-manuell-knapp').addEventListener('click', () => {
     const ean = document.getElementById('skann-manuell-input').value.trim();
     if (!ean) { alert('Skriv inn strekkoden først.'); return; }
-    handterSkannetEan(ean);
+    handterRegistrertEan(ean, bildeData);
   });
 
   import('./skann.js').then(({ startSkann }) => {
-    if (location.hash !== '#/skann') return; // brukeren rakk å navigere bort før modulen lastet
+    if (!location.hash.startsWith('#/registrer')) return; // brukeren rakk å navigere bort før modulen lastet
     const video = document.getElementById('skann-video');
     const status = document.getElementById('skann-status');
     startSkann(video, {
       onTreff: (ean) => {
         status.textContent = `Fant strekkode ${ean}`;
-        handterSkannetEan(ean);
+        handterRegistrertEan(ean, bildeData);
       },
       onFeil: (err) => {
-        console.error('[vinkjeller] Kunne ikke starte kameraet:', err);
-        status.textContent = 'Fikk ikke tilgang til kameraet. Skriv inn strekkoden manuelt under.';
+        console.error('[vinkjeller] Kunne ikke starte kameraet for skanning:', err);
+        status.textContent = 'Klarte ikke å skanne strekkoden. Kopier malen og bildet separat på neste side, og lim begge inn i en AI-chat manuelt — eller skriv inn koden manuelt under.';
         document.getElementById('skann-manuell-detaljer').open = true;
       },
     }).then((stopp) => {
-      if (location.hash === '#/skann') stoppSkann = stopp;
+      if (location.hash.startsWith('#/registrer')) stoppSkann = stopp;
       else stopp();
     });
   });
@@ -920,7 +1009,7 @@ function visSkjema(id, forhandsvalgtKategori) {
   const eksisterende = id ? alleViner.find((x) => x.id === id) : null;
   const forhandsutfyltEan = !eksisterende && skannData ? skannData.ean : '';
   const fraSkann = !!forhandsutfyltEan;
-  const fraCache = fraSkann && Object.keys(skannData).length > 1; // mer enn bare { ean } = kjent fra før
+  const fraCache = fraSkann && !!skannData.harCacheTreff;
   const kategoriStart = eksisterende
     ? (eksisterende.kategori || 'Vin')
     : (fraCache && skannData.kategori) || (forhandsvalgtKategori === 'Brennevin' ? 'Brennevin' : 'Vin');
@@ -934,13 +1023,12 @@ function visSkjema(id, forhandsvalgtKategori) {
     aiToppAr: '', aiBegrunnelse: '', aiKonfidens: '', drikkeklarKilde: '',
     ...(fraCache ? skannData : {}),
     ean: forhandsutfyltEan,
+    bilde: (skannData && skannData.bilde) || '',
   };
   const vKategori = v.kategori || 'Vin';
   const ordKategori = vKategori === 'Brennevin' ? 'brennevin' : 'vin';
   const forslagStart = hentForslag(vKategori, v.type);
-  const brukAiSok = localStorage.getItem('vinkjeller-bruk-ai-sok') === 'true';
-  const trengerIdentifikasjon = fraSkann && !fraCache;
-  const visAiSeksjon = !eksisterende && (!fraSkann || (trengerIdentifikasjon && brukAiSok));
+  const visAiSeksjon = !eksisterende && !fraCache;
 
   app.innerHTML = '';
   app.appendChild(el(`
@@ -956,11 +1044,6 @@ function visSkjema(id, forhandsvalgtKategori) {
         <input type="file" accept="image/*" capture="environment" id="bilde-input">
       </label>
       <img id="bilde-forhandsvisning" class="detaljbilde" src="${v.bilde || ''}" style="${v.bilde ? '' : 'display:none'}">
-      ${!eksisterende ? `
-      <div class="knapperad">
-        <button type="button" class="knapp" id="skann-knapp">📷 Skann strekkode</button>
-      </div>
-      ` : ''}
 
       ${fraCache ? `
       <p class="hjelpetekst">✅ Strekkoden <strong>${escapeHtml(forhandsutfyltEan)}</strong> er kjent fra før — feltene under er forhåndsutfylt. Sjekk at alt stemmer før du lagrer.</p>
@@ -968,24 +1051,26 @@ function visSkjema(id, forhandsvalgtKategori) {
 
       ${visAiSeksjon ? `
       <section class="detaljseksjon">
-        <h2>🤖 ${trengerIdentifikasjon ? 'Ukjent strekkode — identifiser med AI' : 'Legg til med AI'}</h2>
+        <h2>🤖 ${forhandsutfyltEan ? 'Ukjent strekkode — identifiser med AI' : 'Legg til med AI'}</h2>
         <p class="hjelpetekst">
-          ${trengerIdentifikasjon
-            ? `Fant ikke strekkoden <strong>${escapeHtml(forhandsutfyltEan)}</strong> i noen database. Skriv gjerne inn det du husker om flasken, og trykk knappen under — den kopierer forespørselen og åpner Claude i en ny fane, klar til å lime inn.`
-            : `Ta et bilde av etiketten over, og trykk knappen under — den kopierer bildet og
-          åpner Claude i en ny fane. Lim inn bildet der, trykk så «Kopier tekst også» og lim
-          inn den i samme melding før du sender. Lim JSON-svaret AI-en gir tilbake inn i
-          feltet under — én flaske fyller ut skjemaet så du kan sjekke det før lagring, en
-          hel liste importeres rett inn.`}
+          ${forhandsutfyltEan ? `Fant ikke strekkoden <strong>${escapeHtml(forhandsutfyltEan)}</strong> i noen database. ` : ''}Skriv inn det du vet om flasken under, og trykk «Kopier kode og åpne Claude» —
+          den kopierer strekkode, forespørsel og det du skrev i én operasjon, og åpner Claude i
+          en ny fane klar til å lime inn.${v.bilde ? ' Trykk deretter «Kopier bilde» og lim det inn i samme melding — det gir ekstra treffsikkerhet.' : ''}
+          Lim JSON-svaret AI-en gir tilbake inn i feltet under — én flaske fyller ut skjemaet så
+          du kan sjekke det før lagring, en hel liste importeres rett inn.
         </p>
-        ${trengerIdentifikasjon ? `<label>Det du husker om flasken (valgfritt)<textarea id="ai-notater-felt" rows="2" placeholder="f.eks. rødvin, italiensk, kjøpt på ferie"></textarea></label>` : ''}
+        <label>Det du vet om flasken (valgfritt)
+          <textarea id="ai-notater-felt" rows="2" placeholder="f.eks. rødvin, italiensk, kjøpt på ferie"></textarea>
+        </label>
+        <p class="hjelpetekst">💡 Legg gjerne på årgangen her — verken bildet eller strekkoden fanger nødvendigvis opp den.</p>
         <div class="knapperad">
-          <button type="button" class="knapp" id="kopier-mal-knapp">${trengerIdentifikasjon ? 'Kopier & åpne Claude' : 'Kopier AI-mal og åpne Claude'}</button>
-          ${!trengerIdentifikasjon ? `<button type="button" class="knapp" id="kopier-tekst-knapp" style="display:none">📋 Kopier tekst også</button>` : ''}
+          <button type="button" class="knapp knapp-primaer" id="kopier-mal-knapp">Kopier kode og åpne Claude</button>
+          <button type="button" class="knapp" id="kopier-bilde-knapp" style="${v.bilde ? '' : 'display:none'}">🖼️ Kopier bilde</button>
         </div>
+        <p class="hjelpetekst" id="kopier-bilde-notat" style="${v.bilde ? '' : 'display:none'}">Bildet må kopieres separat — Claude sin lim-inn-håndtering plukker bare det ene om bilde og tekst ligger i samme utklipp. Det gir ekstra treffsikkerhet å ta det med.</p>
         <details class="mal-detaljer">
           <summary>Vis malen</summary>
-          <pre class="kodeblokk">${escapeHtml(trengerIdentifikasjon ? byggUkjendVinPrompt(forhandsutfyltEan, '') : AI_PROMPT_MAL)}</pre>
+          <pre class="kodeblokk">${escapeHtml(byggRegistrerPrompt(forhandsutfyltEan, '', !!v.bilde))}</pre>
         </details>
         <label class="importlabel">Lim inn JSON-svar fra AI-en
           <textarea id="ai-json-felt" rows="5" placeholder='{"navn": "...", ...}'></textarea>
@@ -1077,15 +1162,12 @@ function visSkjema(id, forhandsvalgtKategori) {
       bildeData = await komprimerBilde(bildeInput.files[0]);
       bildeForhandsvisning.src = bildeData;
       bildeForhandsvisning.style.display = '';
-      const kopierMalKnapp = document.getElementById('kopier-mal-knapp');
-      const kopierTekstKnapp = document.getElementById('kopier-tekst-knapp');
-      if (kopierMalKnapp && !trengerIdentifikasjon) kopierMalKnapp.textContent = '1. Kopier bilde og åpne Claude';
-      if (kopierTekstKnapp) kopierTekstKnapp.style.display = '';
+      const kopierBildeKnapp = document.getElementById('kopier-bilde-knapp');
+      const kopierBildeNotat = document.getElementById('kopier-bilde-notat');
+      if (kopierBildeKnapp) kopierBildeKnapp.style.display = '';
+      if (kopierBildeNotat) kopierBildeNotat.style.display = '';
     }
   });
-
-  const skannKnapp = document.getElementById('skann-knapp');
-  if (skannKnapp) skannKnapp.addEventListener('click', () => { location.hash = '#/skann'; });
 
   document.getElementById('knapp-kat-vin').addEventListener('click', () => byttKategoriISkjema(skjema, 'Vin'));
   document.getElementById('knapp-kat-brennevin').addEventListener('click', () => byttKategoriISkjema(skjema, 'Brennevin'));
@@ -1096,11 +1178,11 @@ function visSkjema(id, forhandsvalgtKategori) {
   });
 
   // Claude sin lim-inn-håndtering ser ut til å prioritere bildet og droppe teksten når
-  // begge ligger i samme utklipp — derfor kopieres de i to steg med hver sin knapp i
-  // stedet for i ett kombinert clipboard.write()-kall.
+  // begge ligger i samme utklipp — derfor er «kopier kode/tekst» og «kopier bilde» to
+  // separate knapper/kopieringer i stedet for ett kombinert clipboard.write()-kall.
   const feiletKopiering = () => {
     document.querySelector('.mal-detaljer').open = true;
-    alert('Fikk ikke tilgang til utklippstavlen. Malen er vist under — merk og kopier den manuelt.');
+    alert('Fikk ikke tilgang til utklippstavlen. Malen er vist under — merk og kopier den manuelt, og lim den inn i Claude (eller en annen AI-chat).');
   };
 
   const kopierMalKnapp = document.getElementById('kopier-mal-knapp');
@@ -1111,28 +1193,22 @@ function visSkjema(id, forhandsvalgtKategori) {
       // den som en uønsket popup.
       window.open('https://claude.ai/new', '_blank', 'noopener');
 
-      const promptTekst = trengerIdentifikasjon
-        ? byggUkjendVinPrompt(forhandsutfyltEan, (document.getElementById('ai-notater-felt')?.value || '').trim())
-        : AI_PROMPT_MAL;
+      const notater = (document.getElementById('ai-notater-felt')?.value || '').trim();
+      const promptTekst = byggRegistrerPrompt(forhandsutfyltEan, notater, !!bildeData);
 
-      if (bildeData && !trengerIdentifikasjon) {
-        jpegDataUrlTilPngBlob(bildeData)
-          .then((pngBlob) => navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]))
-          .then(() => alert('Bildet er kopiert, og Claude åpnes i en ny fane. Lim det inn der, trykk så «Kopier tekst også» og lim inn teksten i samme melding.'))
-          .catch(feiletKopiering);
-      } else {
-        navigator.clipboard.writeText(promptTekst)
-          .then(() => alert(trengerIdentifikasjon ? 'Forespørselen er kopiert, og Claude åpnes i en ny fane — lim den inn der.' : 'Malen er kopiert, og Claude åpnes i en ny fane — lim den inn der.'))
-          .catch(feiletKopiering);
-      }
+      navigator.clipboard.writeText(promptTekst)
+        .then(() => alert(`Koden og forespørselen er kopiert, og Claude åpnes i en ny fane — lim inn der.${bildeData ? ' Trykk deretter «Kopier bilde» og lim inn bildet i samme melding.' : ''}`))
+        .catch(feiletKopiering);
     });
   }
 
-  const kopierTekstKnapp = document.getElementById('kopier-tekst-knapp');
-  if (kopierTekstKnapp) {
-    kopierTekstKnapp.addEventListener('click', () => {
-      navigator.clipboard.writeText(AI_PROMPT_MAL)
-        .then(() => alert('Malen er kopiert — lim den inn i samme melding som bildet i Claude.'))
+  const kopierBildeKnapp = document.getElementById('kopier-bilde-knapp');
+  if (kopierBildeKnapp) {
+    kopierBildeKnapp.addEventListener('click', () => {
+      if (!bildeData) return;
+      jpegDataUrlTilPngBlob(bildeData)
+        .then((pngBlob) => navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]))
+        .then(() => alert('Bildet er kopiert — lim det inn i samme melding som teksten i Claude.'))
         .catch(feiletKopiering);
     });
   }
@@ -1286,15 +1362,6 @@ function visInnstillinger() {
       </section>
 
       <section class="detaljseksjon">
-        <h2>📷 Skanning</h2>
-        <label class="checkbox-label">
-          <input type="checkbox" id="bruk-ai-sok-checkbox" ${localStorage.getItem('vinkjeller-bruk-ai-sok') === 'true' ? 'checked' : ''}>
-          Bruk AI-søk når en skannet strekkode ikke finnes i kjelleren
-        </label>
-        <p class="hjelpetekst">Av som standard, for at skanning skal gå raskest mulig. Skru på om du vil kunne kopiere en ferdig AI-forespørsel for å identifisere ukjente flasker etter skanning.</p>
-      </section>
-
-      <section class="detaljseksjon">
         <h2>Konto</h2>
         <p class="hjelpetekst">Innlogget som ${escapeHtml(bruker.displayName || bruker.email)}</p>
         <div class="knapperad">
@@ -1433,10 +1500,6 @@ function visInnstillinger() {
     if (feilFiler.length) melding += `\n\nFeil i ${feilFiler.length} fil(er):\n${feilFiler.join('\n')}`;
     alert(melding);
     if (totalAntall) location.hash = '#/viner';
-  });
-
-  document.getElementById('bruk-ai-sok-checkbox').addEventListener('change', (e) => {
-    localStorage.setItem('vinkjeller-bruk-ai-sok', e.target.checked ? 'true' : 'false');
   });
 
   document.getElementById('logg-ut-knapp').addEventListener('click', () => loggUt());

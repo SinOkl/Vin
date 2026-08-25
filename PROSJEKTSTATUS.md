@@ -13,6 +13,10 @@ Google og deler samme "kjeller" (database), med sanntidsoppdatering.
 - **Firebase-prosjekt:** `vinkjeller-f21b1` (console.firebase.google.com)
 - **Prosjektmappe:** `C:\Users\sindr\Claude Code\vinkjeller`
 - **Nåværende versjon:** se `.versjon-merke` nederst i appen (index.html) — økes ved hver endring
+- **NB — mangler siste manuelle test:** punkt 20 under (ny legg-til-flyt) er ikke testet i en
+  ekte nettleser med ekte Google-innlogging og kamera ennå (bare kodegjennomgang + at
+  `app.js` laster uten feil). Test bilde→skann→skjema-flyten på telefon/PC før du stoler
+  100 % på at den fungerer i praksis.
 
 ## Status: fungerende og i bruk
 
@@ -117,6 +121,34 @@ produkter/{ean}                     { kategori, navn, produsent, argang, type, l
     bilde-flyten er det to knapper i rekkefølge — «1. Kopier bilde og åpne Claude»,
     deretter «Kopier tekst også» — fordi Claude sin lim-inn-håndtering viste seg å
     plukke bildet og droppe teksten når begge lå i samme utklipp (se fallgruve under)
+20. **Ny legg-til-flyt: bilde → strekkode → skjema, i ett sammenhengende forløp** (erstatter
+    den gamle todelte flyten med separat «Skann strekkode»-side og gjettet «Bruk AI-søk»-bryter
+    i Innstillinger, som begge er fjernet):
+    - «+ Legg til vin/brennevin med bilde og skanning» (`#/registrer`, evt. `/brennevin`) åpner
+      først et live kamera med en firkant-ramme-overlay og teksten «Tar bilde av etiketten»
+      (`registrerBildeSteg` i `app.js`). Bildet tas med `getUserMedia` + canvas (ikke
+      filopplasting), og komprimeres med samme `skalerOgKomprimerDataUrl`-logikk som
+      filopplasting alltid har brukt
+    - Rett etter (eller ved «Hopp over bilde») går appen automatisk videre til
+      strekkodeskanning («Skanner strekkode», `registrerSkannSteg`, gjenbruker `skann.js`)
+    - Treff sjekkes i `handterRegistrertEan`: egen kjeller først (duplikat-varsel), så den
+      delte `produkter/{ean}`-cachen. Cache-treff hopper rett til utfylt skjema — ingen AI
+      involvert. Cache-bom (eller hoppet/feilet skanning) går til skjemaet (`#/ny`) med
+      bildet og en ev. strekkode med seg, klar for AI-seksjonen
+    - Skjemaets AI-seksjon er nå én samlet blokk uansett inngang (direkte `#/ny`, ukjent
+      strekkode, eller uten strekkode i det hele tatt): fritekstfelt («Det du vet om
+      flasken», med eksplisitt hint om å oppgi årgang siden verken bilde eller strekkode
+      nødvendigvis fanger den) + to knapper — «Kopier kode og åpne Claude» (kopierer
+      strekkode+prompt+fritekst i én operasjon, åpner `claude.ai/new`) og «Kopier bilde»
+      (egen knapp, fordi Claude sin lim-inn-håndtering ikke takler bilde+tekst i samme
+      utklipp — se fallgruve). Prompten bygges nå av én funksjon, `byggRegistrerPrompt`,
+      som erstattet de to gamle separate malene (`AI_PROMPT_MAL` og `byggUkjendVinPrompt`)
+    - JSON-skjemaet AI-en skal svare med (`AI_JSON_SKJEMA_OG_REGLER`) og selve
+      utfyllingslogikken (`parseAiJson`, `normaliserImportertVin`, `fyllSkjemaFraVin`,
+      «Bruk JSON»-knappen) er **ikke** endret
+    - Den manuelle «📷 Skann strekkode»-knappen inni skjemaet, den frittstående
+      `#/skann`-siden og «Bruk AI-søk»-innstillingen er fjernet — skanning skjer nå alltid
+      automatisk som del av legg-til-flyten i stedet for som et opt-in-tillegg
 
 ## Kjente fallgruver (lært på den harde måten — ikke gjenta)
 

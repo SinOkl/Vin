@@ -164,8 +164,19 @@ produkter/{ean}                     { kategori, navn, produsent, argang, type, l
     `byttKategoriISkjema`). Vinkort i listen viser en tynn fyllnivå-linje når < 100 %.
     Bevisst *ikke* koblet til «antall flasker»-tellingen eller «Merk som drukket» —
     to uavhengige konsepter (antall hele flasker vs. hvor mye som er igjen i den åpne)
+23. **Fikset feil estimert verdi + verdi per fane**: etter at fyllnivå kom inn (punkt 22)
+    telte «estimert verdi» fortsatt en anbrutt brennevinsflaske til full pris. Ny felles
+    hjelper `vinVerdi(v)` regner brennevin som `(antall−1) hele + fyllnivå% av den siste`
+    (vin er upåvirket — fortsatt `antall × pris`), brukt av både oversikten og detaljsiden
+    (`beregnStats`-hjelperen for summering av lister). I tillegg viser nå Vin- og
+    Brennevin-fanen hver sin «X flaske(r) · estimert verdi Y kr»-linje for egen kategori,
+    ikke bare den kombinerte summen på oversikten
 
 ## Kjente fallgruver (lært på den harde måten — ikke gjenta)
+
+- **`<input type="file" capture="...">` hopper forbi filvelgeren og går rett til kameraet**
+  på mobil — fjern `capture`-attributtet helt hvis brukeren skal kunne velge mellom kamera
+  og galleri/album (som på bilde-feltet i legg til/rediger-skjemaet).
 
 - **Hash-only navigasjon laster ikke ny kode i test.** Bytter du bare `#/viner` → `#/ny` i
   nettleseren, kjøres samme (evt. gamle) JS-modul i minnet. Test alltid en fersk full

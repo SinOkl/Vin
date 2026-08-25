@@ -151,6 +151,25 @@ function hentFyllniva(v) {
   return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 100;
 }
 
+// Estimert verdi for én post. For brennevin telles kun én av flaskene som «i bruk» —
+// den følger fyllnivået — resten regnes som fulle/uåpnede. Uten dette ville en flaske med
+// f.eks. 20 % igjen fortsatt telle som en hel, ubrukt flaske i den estimerte verdien.
+function vinVerdi(v) {
+  const antall = Number(v.antallFlasker) || 0;
+  const pris = Number(v.innkjopspris) || 0;
+  if (antall <= 0) return 0;
+  if (v.kategori === 'Brennevin') {
+    return (antall - 1) * pris + pris * (hentFyllniva(v) / 100);
+  }
+  return antall * pris;
+}
+
+function beregnStats(liste) {
+  const totalFlasker = liste.reduce((s, v) => s + (Number(v.antallFlasker) || 0), 0);
+  const totalVerdi = liste.reduce((s, v) => s + vinVerdi(v), 0);
+  return { unikeProdukter: liste.length, totalFlasker, totalVerdi };
+}
+
 function drikkestatus(vin) {
   const ar = dataArsnr();
   const fra = vin.drikkeklarFra ? Number(vin.drikkeklarFra) : null;
@@ -546,9 +565,7 @@ function visOversikt() {
   const vinIKjelleren = iKjelleren.filter((v) => (v.kategori || 'Vin') === 'Vin');
   const brennevinIKjelleren = iKjelleren.filter((v) => v.kategori === 'Brennevin');
 
-  const totalFlasker = iKjelleren.reduce((s, v) => s + (Number(v.antallFlasker) || 0), 0);
-  const totalVerdi = iKjelleren.reduce((s, v) => s + (Number(v.antallFlasker) || 0) * (Number(v.innkjopspris) || 0), 0);
-  const unikeProdukter = iKjelleren.length;
+  const { unikeProdukter, totalFlasker, totalVerdi } = beregnStats(iKjelleren);
 
   const klarNa = iKjelleren.filter((v) => drikkestatus(v).klasse === 'status-klar' || drikkestatus(v).klasse === 'status-snart');
   const hastesak = iKjelleren.filter((v) => drikkestatus(v).klasse === 'status-hastesak');
@@ -608,11 +625,14 @@ function visVinliste(kategori) {
     filterState.kategori = kategori;
   }
   const erBrennevin = filterState.kategori === 'Brennevin';
+  const iKjellerenKategori = alleViner.filter((v) => (v.kategori || 'Vin') === filterState.kategori && !v.drukketDato);
+  const { totalFlasker: flaskerKategori, totalVerdi: verdiKategori } = beregnStats(iKjellerenKategori);
 
   app.innerHTML = '';
   const wrap = el(`
     <div class="side">
       <h1>${erBrennevin ? '🥃 Brennevin' : '🍷 Viner'}</h1>
+      ${filterState.visning === 'kjeller' && iKjellerenKategori.length ? `<p class="hjelpetekst">${flaskerKategori} flaske(r) · estimert verdi ${formatKr(verdiKategori) || '–'}</p>` : ''}
       <div class="visning-bytter">
         <button type="button" class="visning-knapp ${filterState.visning === 'kjeller' ? 'aktiv' : ''}" id="knapp-kjeller">${erBrennevin ? '🥃' : '🍷'} I kjelleren</button>
         <button type="button" class="visning-knapp ${filterState.visning === 'drukket' ? 'aktiv' : ''}" id="knapp-drukket">🍾 Drukket</button>
@@ -718,7 +738,11 @@ function visDetalj(id) {
   const erBrennevin = kategori === 'Brennevin';
   const status = drikkestatus(v);
   const forslag = hentForslag(kategori, v.type);
-  const verdiTotal = (Number(v.antallFlasker) || 0) * (Number(v.innkjopspris) || 0);
+  const verdiTotal = vinVerdi(v);
+  const fyllnivaForVerdi = hentFyllniva(v);
+  const verdiForklaring = erBrennevin && fyllnivaForVerdi < 100 && (Number(v.antallFlasker) || 0) > 0
+    ? `${(Number(v.antallFlasker) || 0) > 1 ? `${Number(v.antallFlasker) - 1} hel(e) á ${formatKr(v.innkjopspris)} + ` : ''}${fyllnivaForVerdi}% av 1 á ${formatKr(v.innkjopspris)}`
+    : `${v.antallFlasker} × ${formatKr(v.innkjopspris)}`;
   const tilbakeHref = erBrennevin ? '#/brennevin' : '#/viner';
   const ikon = erBrennevin ? '🥃' : '🍷';
 
@@ -754,7 +778,7 @@ function visDetalj(id) {
           ${dRad('Antall flasker', v.antallFlasker)}
           ${dRad('Volum', v.volumCl ? v.volumCl + ' cl' : '')}
           ${dRad('Pris per flaske', formatKr(v.innkjopspris))}
-          ${dRad('Verdi totalt', verdiTotal ? `${formatKr(verdiTotal)}  (${v.antallFlasker} × ${formatKr(v.innkjopspris)})` : '')}
+          ${dRad('Verdi totalt', verdiTotal ? `${formatKr(verdiTotal)}  (${verdiForklaring})` : '')}
           ${dRad('Kjøpt hos', v.kjoptHos)}
           ${dRad('Innkjøpsdato', v.innkjopsdato)}
           ${dRad('Strekkode (EAN)', v.ean)}

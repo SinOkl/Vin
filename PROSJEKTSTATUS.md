@@ -204,6 +204,35 @@ produkter/{ean}                     { kategori, navn, produsent, argang, type, l
     Console i stedet ved å opprette et
     `brukere/{uid}`-dokument med `status:'godkjent'`).
 
+26. **Visuell redesign etter Claude Design-mockup**: hele fargesystemet og typografien er byttet
+    ut basert på et redesign-prosjekt bygget i Claude Design («Vine cellar — warm rustic
+    redesign», lys variant valgt av Sindre). `styles.css` sitt `:root` bruker nå `oklch()`-
+    baserte design-tokens (varm off-white bakgrunn, bordeaux `#7a1f3d` som primærfarge), Google
+    Fonts `Lora` (overskrifter/tall) + `Public Sans` (brødtekst), og automatisk mørk modus
+    (`prefers-color-scheme`) er fjernet til fordel for det faste lyse temaet. Bunnmenyen gikk fra
+    5 til 4 faner (Oversikt/Vin/Brennevin/Innstillinger, prikk-indikator i stedet for emoji) —
+    «Legg til» er nå en fast knapp (`#cta-legg-til` i `index.html`, styrt av
+    `oppdaterLeggTilCta()` i `app.js`) som følger med over bunnmenyen på alle sider unntatt selve
+    legg-til/rediger-flyten, og peker automatisk mot riktig kategori (Vin/Brennevin).
+    Oversikt-siden (`visOversikt()`) fikk fargede topplinjer på statkortene, en ny
+    vin/brennevin-fordelingsbar, og en «Nylig aktivitet»-seksjon (`nyligAktivitet()`) — denne er
+    **avledet** fra eksisterende `drukketDato`/`innkjopsdato`-felter, ikke en ny hendelseslogg
+    (appen har ingen egen aktivitetstabell). Kategori-ikonene i mockupen kunne ikke lastes ned
+    pikselnøyaktig som PNG via Claude Design-verktøyet her (store base64-blobs ble korrumpert i
+    overføringen gjennom chat-grensesnittet) — løst med egne inline-SVG-glassmotiv i `app.js`
+    (omriss + farget innhold, stil etter et referansebilde Sindre sendte med glass-ikoner per
+    type). `KATEGORI_IKON_BYGGER` dekker nå de fleste typene med egen, gjenkjennelig glassform
+    (vinglass for Rødvin/Hvitvin/Rosévin/Dessertvin-Portvin, flute for Musserende, eple for
+    Sider, tumbler m/isbiter for Whisky, tumbler for Rom/Cognac, shotglass for Vodka/Tequila,
+    cordialglass for Akevitt/Likør, cocktailskål for Gin) — kun «Annet»-typene faller nå tilbake
+    på den eldre, generiske `plassholderSvg()`-silhuetten. Skjema, kamera/skanne-flyt, Innstillinger
+    og Godkjenninger fikk kun de nye farge-/font-tokenene via den globale CSS-en, ingen
+    strukturendring — mockupen dekket ikke disse skjermene. **Ikke testet med ekte innlogging
+    ennå** (kun verifisert lokalt uten Firebase-sesjon: ingen konsoll-/serverfeil, riktige
+    fonter/farger/tokens, 4-faners nav og CTA-knapp skjules korrekt på innloggingssiden) — neste
+    steg er å teste Oversikt/Viner/Detalj-sidene med ekte data på telefon, og huske
+    `sw.js`/versjonsmerke er allerede bumpet (v2.11.0 / `vinkjeller-v32`).
+
 ## Kjente fallgruver (lært på den harde måten — ikke gjenta)
 
 - **`<input type="file" capture="...">` hopper forbi filvelgeren og går rett til kameraet**

@@ -4,25 +4,31 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Vinkjelleren</title>
-  <meta name="theme-color" content="#3b0a1a">
+  <meta name="theme-color" content="#7a1f3d">
   <meta name="description" content="Hold oversikt over vinkjelleren din — lagring, drikkevindu og matpar.">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icons/icon-192.png">
   <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <main id="app"></main>
 
+  <div class="cta-legg-til" id="cta-legg-til">
+    <a class="cta-legg-til-knapp" id="cta-legg-til-lenke" href="#/registrer">Legg til flaske</a>
+  </div>
+
   <nav class="bunnav">
-    <a class="navlink" href="#/"><span>🏠</span><small>Oversikt</small></a>
-    <a class="navlink" href="#/viner"><span>🍷</span><small>Vin</small></a>
-    <a class="navlink" href="#/brennevin"><span>🥃</span><small>Brennevin</small></a>
-    <a class="navlink" href="#/registrer"><span>➕</span><small>Legg til</small></a>
-    <a class="navlink" href="#/innstillinger"><span>⚙️</span><small>Innstillinger</small></a>
+    <a class="navlink" href="#/"><span class="navdott"></span><small>Oversikt</small></a>
+    <a class="navlink" href="#/viner"><span class="navdott"></span><small>Vin</small></a>
+    <a class="navlink" href="#/brennevin"><span class="navdott"></span><small>Brennevin</small></a>
+    <a class="navlink" href="#/innstillinger"><span class="navdott"></span><small>Innstillinger</small></a>
   </nav>
 
-  <div class="versjon-merke">v2.10.0</div>
+  <div class="versjon-merke">v2.11.0</div>
 
   <script type="module" src="./app.js"></script>
 </body>

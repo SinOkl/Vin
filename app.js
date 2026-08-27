@@ -63,6 +63,120 @@ const TYPE_FARGE = {
   'Likør': '#a13d63',
 };
 
+// Kategori-ikoner (inline SVG, omriss + farget innhold — stil etter referansebilde fra
+// brukeren) for typene som har et eget, gjenkjennelig glassmotiv i redesignet. «Annet» og andre
+// umappede typer faller tilbake på plassholderSvg() sin generiske fargede silhuett.
+const GLASS_INK = '#2a1a20';
+
+function glassSvgWrap(indre, merkelapp) {
+  return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${merkelapp}">${indre}</svg>`;
+}
+
+// Vinglass: bolle + stett + fot. fyllTopp styrer hvor høyt væsken står (lavere tall = fullere).
+function vinglassSvg(farge, fyllTopp) {
+  return `
+    <path d="M34,${fyllTopp} C34,44 36,52 50,52 C64,52 66,44 66,${fyllTopp} Z" fill="${farge}"/>
+    <path d="M32,16 C32,40 34,54 50,54 C66,54 68,40 68,16" fill="none" stroke="${GLASS_INK}" stroke-width="4" stroke-linecap="round"/>
+    <line x1="50" y1="54" x2="50" y2="83" stroke="${GLASS_INK}" stroke-width="4"/>
+    <line x1="36" y1="88" x2="64" y2="88" stroke="${GLASS_INK}" stroke-width="4" stroke-linecap="round"/>
+  `;
+}
+
+// Musserende-flaske/glass (flute) med bobler.
+function fluteSvg(farge) {
+  return `
+    <path d="M44,22 L56,22 L54,58 C54,61 46,61 46,58 Z" fill="${farge}"/>
+    <path d="M42,10 L58,10 L55,58 C55,64 45,64 45,58 Z" fill="none" stroke="${GLASS_INK}" stroke-width="4" stroke-linejoin="round"/>
+    <line x1="50" y1="64" x2="50" y2="83" stroke="${GLASS_INK}" stroke-width="4"/>
+    <line x1="40" y1="88" x2="60" y2="88" stroke="${GLASS_INK}" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="48" cy="35" r="1.6" fill="none" stroke="${GLASS_INK}" stroke-width="1.4"/>
+    <circle cx="52" cy="27" r="1.3" fill="none" stroke="${GLASS_INK}" stroke-width="1.4"/>
+    <circle cx="50" cy="46" r="1.3" fill="none" stroke="${GLASS_INK}" stroke-width="1.4"/>
+  `;
+}
+
+// Tumbler/rocks-glass — evt. med isbiter (whisky).
+function tumblerSvg(farge, isbiter) {
+  return `
+    <path d="M34,55 L66,55 L64,82 C64,85 36,85 36,82 Z" fill="${farge}"/>
+    <path d="M30,28 L70,28 L65,82 C65,87 35,87 35,82 Z" fill="none" stroke="${GLASS_INK}" stroke-width="4" stroke-linejoin="round"/>
+    ${isbiter ? `
+      <rect x="39" y="44" width="11" height="11" rx="1.5" fill="#eef1ee" stroke="${GLASS_INK}" stroke-width="2.5" transform="rotate(-8 44 49)"/>
+      <rect x="51" y="49" width="10" height="10" rx="1.5" fill="#eef1ee" stroke="${GLASS_INK}" stroke-width="2.5" transform="rotate(10 56 54)"/>
+    ` : ''}
+  `;
+}
+
+// Shots/lite glass — klart (vodka, uten fyll) eller farget, evt. med limebåt (tequila).
+function shotglassSvg(farge, limebat) {
+  return `
+    ${farge ? `<path d="M43,45 L57,45 L54,80 C54,84 46,84 46,80 Z" fill="${farge}"/>` : ''}
+    <path d="M40,22 L60,22 L57,80 C57,84 43,84 43,80 Z" fill="none" stroke="${GLASS_INK}" stroke-width="4" stroke-linejoin="round"/>
+    ${limebat ? `
+      <path d="M68,30 A10,10 0 0 1 78,40 L68,40 Z" fill="#c9d97a" stroke="${GLASS_INK}" stroke-width="2"/>
+      <path d="M68,30 L68,40" stroke="${GLASS_INK}" stroke-width="1.2"/>
+    ` : ''}
+  `;
+}
+
+// Cordial-/akevittglass — lite og smalt.
+function cordialSvg(farge) {
+  return `
+    <path d="M42,26 L58,26 L55,60 C55,63 45,63 45,60 Z" fill="${farge}"/>
+    <path d="M40,18 L60,18 L56,60 C56,66 44,66 44,60 Z" fill="none" stroke="${GLASS_INK}" stroke-width="4" stroke-linejoin="round"/>
+    <line x1="50" y1="66" x2="50" y2="83" stroke="${GLASS_INK}" stroke-width="4"/>
+    <line x1="38" y1="88" x2="62" y2="88" stroke="${GLASS_INK}" stroke-width="4" stroke-linecap="round"/>
+  `;
+}
+
+// Cocktailskål (gin) — bred, grunn bolle + sitrusskive.
+function coupeSvg(farge) {
+  return `
+    <path d="M30,20 C30,34 38,42 50,42 C62,42 70,34 70,20 Z" fill="${farge}"/>
+    <path d="M25,15 C25,35 35,45 50,45 C65,45 75,35 75,15" fill="none" stroke="${GLASS_INK}" stroke-width="4" stroke-linecap="round"/>
+    <line x1="50" y1="45" x2="50" y2="80" stroke="${GLASS_INK}" stroke-width="4"/>
+    <line x1="36" y1="88" x2="64" y2="88" stroke="${GLASS_INK}" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="68" cy="17" r="6" fill="#c9d97a" stroke="${GLASS_INK}" stroke-width="1.6"/>
+    <line x1="68" y1="12" x2="68" y2="22" stroke="${GLASS_INK}" stroke-width="1"/>
+    <line x1="63" y1="17" x2="73" y2="17" stroke="${GLASS_INK}" stroke-width="1"/>
+  `;
+}
+
+// Kobler type til riktig glassform. Kategorien avgjør kun fargen (TYPE_FARGE), ikke selve
+// formen — de fleste kombinasjonene her er entydige typenavn uansett kategori.
+const KATEGORI_IKON_BYGGER = {
+  'Rødvin': (f) => vinglassSvg(f, 30),
+  'Hvitvin': (f) => vinglassSvg(f, 30),
+  'Rosévin': (f) => vinglassSvg(f, 30),
+  'Dessertvin/Portvin': (f) => vinglassSvg(f, 38),
+  'Musserende': (f) => fluteSvg(f),
+  'Whisky': (f) => tumblerSvg(f, true),
+  'Rom': (f) => tumblerSvg(f, false),
+  'Cognac/Brandy': (f) => tumblerSvg(f, false),
+  'Vodka': () => shotglassSvg(null, false),
+  'Tequila': (f) => shotglassSvg(f, true),
+  'Akevitt': (f) => cordialSvg(f),
+  'Likør': (f) => cordialSvg(f),
+  'Gin': (f) => coupeSvg(f),
+};
+
+// Flaske-/glass-ikon for en gitt kategori+type: bruker et gjenkjennelig glassmotiv for de
+// typene redesignet definerer et eget ikon for (se KATEGORI_IKON_BYGGER — «Sider» beholder sitt
+// egne eple-ikon under, «Annet» og resten faller tilbake på plassholderSvg()).
+function flaskeIkonSvg(kategori, type) {
+  if (type === 'Sider') {
+    return glassSvgWrap(`
+      <circle cx="38" cy="55" r="26" fill="${TYPE_FARGE.Sider}"/>
+      <circle cx="62" cy="55" r="26" fill="${TYPE_FARGE.Sider}"/>
+      <rect x="47" y="18" width="6" height="16" rx="2" fill="${TYPE_FARGE.Sider}"/>
+    `, escapeHtml(type));
+  }
+  const bygger = KATEGORI_IKON_BYGGER[type];
+  if (!bygger) return plassholderSvg(kategori, type);
+  const farge = TYPE_FARGE[type] || (kategori === 'Brennevin' ? '#8a8a8a' : '#7a4a6b');
+  return glassSvgWrap(bygger(farge), escapeHtml(type || kategori || ''));
+}
+
 // Plassholder-bilde (inline SVG) for flasker uten eget bilde — flaskesilhuett for vin,
 // glass-silhuett for brennevin, farget etter type slik at ulike typer skiller seg visuelt.
 function plassholderSvg(kategori, type) {
@@ -361,6 +475,29 @@ const bunnav = document.querySelector('.bunnav');
 
 function visBunnav(vis) {
   bunnav.style.display = vis ? '' : 'none';
+  const cta = document.getElementById('cta-legg-til');
+  if (cta) cta.style.display = vis ? '' : 'none';
+}
+
+// Styrer den faste «Legg til flaske»-knappen over bunnmenyen: skjules helt inni selve
+// legg-til/rediger-flyten (der den ville vært forstyrrende/overflødig), ellers pekes den mot
+// riktig kategori (Vin/Brennevin) ut fra hvilken side vi står på.
+function oppdaterLeggTilCta(path, param) {
+  const cta = document.getElementById('cta-legg-til');
+  if (!cta || bunnav.style.display === 'none') return; // pre-innlogging: visBunnav() styrer synligheten
+  if (path === 'ny' || path === 'rediger' || path === 'registrer') {
+    cta.style.display = 'none';
+    return;
+  }
+  cta.style.display = '';
+  let kategori = filterState.kategori || 'Vin';
+  if (path === 'brennevin') kategori = 'Brennevin';
+  else if (path === 'viner') kategori = 'Vin';
+  else if (path === 'vin' && param) {
+    const post = alleViner.find((x) => x.id === param);
+    kategori = post && post.kategori === 'Brennevin' ? 'Brennevin' : 'Vin';
+  }
+  document.getElementById('cta-legg-til-lenke').href = kategori === 'Brennevin' ? '#/registrer/brennevin' : '#/registrer';
 }
 
 // ---------- Routing ----------
@@ -396,6 +533,7 @@ function ruteIndre() {
   const [, path, param] = hash.match(/^#\/?([^/]*)\/?([^/]*)$/) || [];
 
   document.querySelectorAll('.navlink').forEach((a) => a.classList.remove('aktiv'));
+  oppdaterLeggTilCta(path, param);
 
   if (!path || path === '') {
     settAktivNav('#/');
@@ -649,6 +787,32 @@ function visKjellerOnboarding() {
 
 // ---------- Visning: Oversikt ----------
 
+// Relativ dato («I dag», «I går», «N dager siden») for aktivitetsfeeden under, regnet ut fra
+// en ISO-dato (yyyy-mm-dd).
+function relativDato(iso) {
+  const da = new Date(iso);
+  if (Number.isNaN(da.getTime())) return '';
+  const dagerSiden = Math.round((new Date(new Date().toDateString()) - new Date(da.toDateString())) / 86400000);
+  if (dagerSiden <= 0) return 'I dag';
+  if (dagerSiden === 1) return 'I går';
+  if (dagerSiden < 14) return `${dagerSiden} dager siden`;
+  if (dagerSiden < 60) return `${Math.round(dagerSiden / 7)} uker siden`;
+  return `${Math.round(dagerSiden / 30)} måneder siden`;
+}
+
+// «Nylig aktivitet» avledes av eksisterende felter (drukketDato/innkjopsdato) — appen har ingen
+// egen hendelseslogg, så dette er en tolkning av mockupens aktivitetsfeed, ikke en direkte port.
+// Eldre poster uten innkjopsdato dukker naturlig nok ikke opp som «lagt til»-hendelser.
+function nyligAktivitet(alle, antall) {
+  const hendelser = [];
+  for (const v of alle) {
+    if (v.drukketDato) hendelser.push({ v, verb: 'Drukket', dato: v.drukketDato });
+    else if (v.innkjopsdato) hendelser.push({ v, verb: 'Lagt til', dato: v.innkjopsdato });
+  }
+  hendelser.sort((a, b) => b.dato.localeCompare(a.dato));
+  return hendelser.slice(0, antall);
+}
+
 function visOversikt() {
   const iKjelleren = alleViner.filter((v) => !v.drukketDato);
   const drukket = alleViner.filter((v) => v.drukketDato);
@@ -661,16 +825,38 @@ function visOversikt() {
   const hastesak = iKjelleren.filter((v) => drikkestatus(v).klasse === 'status-hastesak');
   const snart = iKjelleren.filter((v) => drikkestatus(v).klasse === 'status-snart');
 
+  const flaskerVin = vinIKjelleren.reduce((s, v) => s + (Number(v.antallFlasker) || 0), 0);
+  const flaskerBrennevin = brennevinIKjelleren.reduce((s, v) => s + (Number(v.antallFlasker) || 0), 0);
+  const flaskerTotalt = flaskerVin + flaskerBrennevin;
+  const andelVin = flaskerTotalt ? Math.round((flaskerVin / flaskerTotalt) * 100) : 0;
+
+  const aktivitet = nyligAktivitet(alleViner, 4);
+
   app.innerHTML = '';
   app.appendChild(el(`
     <div class="side">
-      <h1>🍷 ${escapeHtml(aktivKjeller.navn)}</h1>
+      <h1>${escapeHtml(aktivKjeller.navn)}</h1>
       <div class="statgrid">
-        <div class="statkort"><span class="stattall">${unikeProdukter}</span><span class="statlabel">produkter</span></div>
-        <div class="statkort"><span class="stattall">${totalFlasker}</span><span class="statlabel">flasker</span></div>
-        <div class="statkort"><span class="stattall">${formatKr(totalVerdi) || '–'}</span><span class="statlabel">est. verdi</span></div>
+        <div class="statkort statkort-produkter"><span class="stattall">${unikeProdukter}</span><span class="statlabel">produkter</span></div>
+        <div class="statkort statkort-flasker"><span class="stattall">${totalFlasker}</span><span class="statlabel">flasker</span></div>
+        <div class="statkort statkort-verdi"><span class="stattall">${formatKr(totalVerdi) || '–'}</span><span class="statlabel">est. verdi</span></div>
       </div>
-      ${unikeProdukter ? `<p class="hjelpetekst">🍷 ${vinIKjelleren.length} vin(er) · 🥃 ${brennevinIKjelleren.length} brennevin · ${(aktivKjeller.medlemmer || []).length} medlem(mer)</p>` : `<p class="hjelpetekst">${(aktivKjeller.medlemmer || []).length} medlem(mer) i denne kjelleren</p>`}
+      ${unikeProdukter ? `<p class="hjelpetekst">${vinIKjelleren.length} vin(er) · ${brennevinIKjelleren.length} brennevin · ${(aktivKjeller.medlemmer || []).length} medlem(mer)</p>` : `<p class="hjelpetekst">${(aktivKjeller.medlemmer || []).length} medlem(mer) i denne kjelleren</p>`}
+      ${flaskerTotalt ? `<div class="fordelingsbar"><div class="fordelingsbar-vin" style="width:${andelVin}%"></div><div class="fordelingsbar-brennevin" style="width:${100 - andelVin}%"></div></div>` : ''}
+
+      ${aktivitet.length ? `
+        <section>
+          <h2>Nylig aktivitet</h2>
+          <ul class="aktivitet-liste">${aktivitet.map((h) => `
+            <li class="aktivitet-rad">
+              <span class="aktivitet-ikon">${flaskeIkonSvg(h.v.kategori, h.v.type)}</span>
+              <span class="aktivitet-info">
+                <span class="aktivitet-navn">${escapeHtml(h.v.navn)}</span>
+                <div class="aktivitet-verb ${h.verb === 'Drukket' ? 'aktivitet-verb-drukket' : 'aktivitet-verb-lagt'}">${h.verb} · ${relativDato(h.dato)}</div>
+              </span>
+            </li>
+          `).join('')}</ul>
+        </section>` : ''}
 
       ${hastesak.length ? `
         <section class="varselboks varsel-hastesak">
@@ -685,13 +871,13 @@ function visOversikt() {
         </section>` : ''}
 
       <section>
-        <h2>✅ Klare til drikking (${klarNa.length})</h2>
+        <h2>Klare til drikking (${klarNa.length})</h2>
         ${klarNa.length ? listeKompakt(klarNa.slice(0, 8)) : '<p class="tom">Ingen produkter er markert som klare akkurat nå.</p>'}
       </section>
 
-      ${unikeProdukter === 0 ? `<p class="tom">Kjelleren er tom. Trykk «Legg til» for å registrere den første vinen eller flasken brennevin.</p>` : ''}
+      ${unikeProdukter === 0 ? `<p class="tom">Kjelleren er tom. Trykk «Legg til flaske» for å registrere den første vinen eller flasken brennevin.</p>` : ''}
 
-      ${drukket.length ? `<p class="hjelpetekst"><a href="#/viner">🍾 ${drukket.length} i drikkehistorikken →</a></p>` : ''}
+      ${drukket.length ? `<p class="hjelpetekst"><a href="#/viner">${drukket.length} i drikkehistorikken →</a></p>` : ''}
     </div>
   `));
 }
@@ -699,8 +885,11 @@ function visOversikt() {
 function listeKompakt(viner) {
   return `<ul class="kompaktliste">${viner.map((v) => `
     <li><a href="#/vin/${v.id}">
-      <span class="kl-navn">${escapeHtml(v.navn)}${v.argang ? ' ' + escapeHtml(v.argang) : ''}</span>
-      <span class="kl-info">${escapeHtml(v.type || '')} · ${v.antallFlasker || 0} stk</span>
+      <span class="kl-ikon">${flaskeIkonSvg(v.kategori, v.type)}</span>
+      <span class="kl-tekst">
+        <span class="kl-navn">${escapeHtml(v.navn)}${v.argang ? ' ' + escapeHtml(v.argang) : ''}</span>
+        <span class="kl-info">${escapeHtml(v.type || '')} · ${v.antallFlasker || 0} stk</span>
+      </span>
     </a></li>
   `).join('')}</ul>`;
 }
@@ -807,7 +996,7 @@ function vinkortHtml(v) {
   const visFyllniva = v.kategori === 'Brennevin' && !v.drukketDato && fyllniva < 100;
   return `
     <a class="vinkort ${v.drukketDato ? 'drukket' : ''}" href="#/vin/${v.id}">
-      <div class="vinkort-bilde">${v.bilde ? `<img src="${v.bilde}" alt="">` : plassholderSvg(v.kategori, v.type)}</div>
+      <div class="vinkort-bilde">${v.bilde ? `<img src="${v.bilde}" alt="">` : flaskeIkonSvg(v.kategori, v.type)}</div>
       <div class="vinkort-info">
         <div class="vinkort-navn">${escapeHtml(v.navn)}${v.argang ? ` <span class="argang">${escapeHtml(v.argang)}</span>` : ''}</div>
         <div class="vinkort-detalj">${escapeHtml(v.produsent || '')}${v.type ? ' · ' + escapeHtml(v.type) : ''}</div>

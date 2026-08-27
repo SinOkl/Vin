@@ -1,17 +1,22 @@
 :root {
-  --bordo: #6b1030;
-  --bordo-mork: #3b0a1a;
+  --bordo: #7a1f3d;
+  --bordo-mork: #5c1730;
   --bordo-lys: #a02040;
-  --gull: #c9a55c;
-  --bg: #faf7f5;
-  --kort-bg: #ffffff;
-  --tekst: #241014;
-  --tekst-lys: #6b5a5e;
-  --gronn: #2f7a4d;
-  --gul: #b8860b;
+  --gull: oklch(0.38 0.12 75);
+  --bg: oklch(0.97 0.013 65);
+  --kort-bg: oklch(0.995 0.006 65);
+  --tekst: oklch(0.25 0.02 40);
+  --tekst-lys: oklch(0.48 0.02 45);
+  --gronn: oklch(0.42 0.11 150);
+  --gronn-bg: oklch(0.9 0.07 150 / 0.5);
+  --gul: oklch(0.38 0.12 75);
+  --gul-bg: oklch(0.9 0.06 75 / 0.5);
   --rod: #b3261e;
-  --grense: #e8dfe1;
+  --rod-bg: #fdecea;
+  --grense: oklch(0.85 0.02 55);
   --radius: 14px;
+  --font-brod: 'Public Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-serif: 'Lora', Georgia, serif;
 }
 
 * { box-sizing: border-box; }
@@ -21,27 +26,31 @@ html, body {
   padding: 0;
   background: var(--bg);
   color: var(--tekst);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-brod);
   -webkit-tap-highlight-color: transparent;
 }
 
 #app {
-  padding: 16px 16px calc(88px + env(safe-area-inset-bottom));
+  padding: 16px 16px calc(148px + env(safe-area-inset-bottom));
   max-width: 640px;
   margin: 0 auto;
   min-height: 100vh;
 }
 
 h1 {
-  font-size: 1.5rem;
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-size: 1.6rem;
   margin: 4px 0 16px;
-  color: var(--bordo-mork);
+  color: var(--tekst);
 }
 
 h2 {
-  font-size: 1.05rem;
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-size: 1.1rem;
   margin: 0 0 8px;
-  color: var(--bordo);
+  color: var(--tekst);
 }
 
 .side { display: flex; flex-direction: column; gap: 4px; }
@@ -106,6 +115,32 @@ h2 {
   font-size: 0.76rem;
 }
 
+/* ---------- Fast «Legg til flaske»-knapp ---------- */
+
+.cta-legg-til {
+  position: fixed;
+  left: 0; right: 0;
+  bottom: calc(64px + env(safe-area-inset-bottom));
+  padding: 10px 16px;
+  background: var(--bg);
+  z-index: 9;
+}
+
+.cta-legg-til-knapp {
+  display: block;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 13px;
+  border-radius: 12px;
+  background: var(--bordo);
+  color: #fdf2f4;
+  text-align: center;
+  font-family: var(--font-brod);
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-decoration: none;
+}
+
 /* ---------- Bunnavigasjon ---------- */
 
 .bunnav {
@@ -114,8 +149,7 @@ h2 {
   display: flex;
   background: var(--kort-bg);
   border-top: 1px solid var(--grense);
-  padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
-  box-shadow: 0 -2px 10px rgba(0,0,0,0.06);
+  padding: 10px 4px calc(6px + env(safe-area-inset-bottom));
   z-index: 10;
 }
 
@@ -125,17 +159,25 @@ h2 {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 5px;
   padding: 6px 0;
   text-decoration: none;
   color: var(--tekst-lys);
-  font-size: 0.62rem;
+  font-size: 0.66rem;
+  font-weight: 400;
   border-radius: 10px;
   white-space: nowrap;
 }
 
-.navlink span { font-size: 1.2rem; }
-.navlink.aktiv { color: var(--bordo); background: rgba(107,16,48,0.08); }
+.navdott {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--tekst-lys);
+}
+
+.navlink.aktiv { color: var(--bordo); font-weight: 700; }
+.navlink.aktiv .navdott { background: var(--bordo); }
 
 .nav-badge {
   position: absolute;
@@ -163,44 +205,101 @@ h2 {
 }
 
 .statkort {
-  background: linear-gradient(160deg, var(--bordo), var(--bordo-mork));
-  color: white;
+  background: var(--kort-bg);
+  border: 1px solid var(--grense);
+  color: var(--tekst);
   border-radius: var(--radius);
-  padding: 14px 8px;
+  padding: 14px 8px 12px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 2px;
+  position: relative;
+  overflow: hidden;
 }
 
-.stattall { font-size: 1.3rem; font-weight: 700; }
-.statlabel { font-size: 0.7rem; opacity: 0.85; }
+.statkort::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--stat-farge, var(--bordo));
+}
+
+.statkort-produkter { --stat-farge: var(--gronn); }
+.statkort-flasker { --stat-farge: var(--bordo); }
+.statkort-verdi { --stat-farge: var(--gull); }
+.statkort-verdi .stattall { color: var(--gull); }
+
+.stattall { font-family: var(--font-serif); font-size: 1.3rem; font-weight: 700; }
+.statlabel { font-size: 0.7rem; color: var(--tekst-lys); }
 
 section { margin-bottom: 22px; }
+
+/* ---------- Fordelingsbar vin/brennevin ---------- */
+
+.fordelingsbar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 0 0 22px;
+}
+.fordelingsbar-vin { background: var(--bordo); }
+.fordelingsbar-brennevin { background: var(--gull); }
+
+/* ---------- Nylig aktivitet ---------- */
+
+.aktivitet-liste { list-style: none; margin: 0; padding: 0; }
+.aktivitet-rad {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--grense);
+}
+.aktivitet-rad:last-child { border-bottom: none; }
+.aktivitet-ikon { width: 20px; text-align: center; flex: none; font-size: 1rem; }
+.aktivitet-info { flex: 1; min-width: 0; }
+.aktivitet-navn { font-size: 0.9rem; }
+.aktivitet-verb { font-size: 0.75rem; font-weight: 600; }
+.aktivitet-verb-lagt { color: var(--gronn); }
+.aktivitet-verb-drukket { color: var(--gull); }
 
 .varselboks {
   border-radius: var(--radius);
   padding: 12px 14px;
   margin-bottom: 16px;
+  border: 1px solid;
 }
 
-.varsel-hastesak { background: #fdecea; border: 1px solid #f3b9b3; }
-.varsel-snart { background: #fff6e0; border: 1px solid #f0d896; }
+.varsel-hastesak { background: var(--rod-bg); border-color: #f3b9b3; color: var(--rod); }
+.varsel-snart { background: var(--gul-bg); border-color: oklch(0.55 0.11 75 / 0.5); color: var(--gul); }
+.varselboks h2 { color: inherit; }
 
 .kompaktliste { list-style: none; margin: 0; padding: 0; }
-.kompaktliste li { border-bottom: 1px solid rgba(0,0,0,0.06); }
+.kompaktliste li { border-bottom: 1px solid var(--grense); }
 .kompaktliste li:last-child { border-bottom: none; }
 .kompaktliste a {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 10px;
   padding: 8px 2px;
   text-decoration: none;
   color: var(--tekst);
-  gap: 8px;
 }
+.kl-ikon { width: 18px; height: 18px; flex: none; }
+.kl-tekst { flex: 1; min-width: 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .kl-navn { font-weight: 600; }
-.kl-info { font-size: 0.8rem; color: var(--tekst-lys); white-space: nowrap; }
+.kl-info {
+  font-size: 0.75rem;
+  color: var(--tekst-lys);
+  white-space: nowrap;
+  background: var(--bg);
+  padding: 3px 9px;
+  border-radius: 20px;
+  flex: none;
+}
 
 .tom { color: var(--tekst-lys); font-size: 0.9rem; }
 
@@ -211,16 +310,16 @@ section { margin-bottom: 22px; }
 
 input, select, textarea {
   font-size: 1rem;
+  font-family: inherit;
   padding: 10px 12px;
   border: 1px solid var(--grense);
   border-radius: 10px;
   background: var(--kort-bg);
   color: var(--tekst);
   width: 100%;
-  font-family: inherit;
 }
 
-select { font-size: 0.85rem; padding: 8px 6px; }
+select { font-size: 0.8rem; padding: 10px 6px; text-align: center; color: var(--tekst-lys); }
 
 textarea { min-height: 70px; resize: vertical; }
 
@@ -234,7 +333,7 @@ textarea { min-height: 70px; resize: vertical; }
   background: var(--kort-bg);
   border: 1px solid var(--grense);
   border-radius: var(--radius);
-  padding: 10px;
+  padding: 12px;
   text-decoration: none;
   color: var(--tekst);
   align-items: center;
@@ -273,19 +372,19 @@ textarea { min-height: 70px; resize: vertical; }
 .godkjenning-info { flex: 1; min-width: 140px; }
 
 .vinkort-bilde {
-  width: 52px; height: 52px;
-  border-radius: 8px;
-  background: #f1e9ea;
+  width: 44px; height: 56px;
+  border-radius: 6px;
+  background: var(--bg);
   display: flex; align-items: center; justify-content: center;
   font-size: 1.5rem;
   flex-shrink: 0;
   overflow: hidden;
 }
 .vinkort-bilde img { width: 100%; height: 100%; object-fit: cover; }
-.vinkort-bilde svg { width: 62%; height: 62%; }
+.vinkort-bilde svg { width: 72%; height: 72%; }
 
 .vinkort-info { flex: 1; min-width: 0; }
-.vinkort-navn { font-weight: 700; }
+.vinkort-navn { font-weight: 600; }
 .vinkort-detalj { font-size: 0.8rem; color: var(--tekst-lys); }
 .argang { color: var(--gull); font-weight: 600; }
 
@@ -307,16 +406,16 @@ textarea { min-height: 70px; resize: vertical; }
   display: inline-block;
   margin-top: 4px;
   font-size: 0.7rem;
-  padding: 2px 8px;
+  padding: 3px 9px;
   border-radius: 999px;
   font-weight: 600;
 }
-.status-klar { background: #e4f4e9; color: var(--gronn); }
-.status-snart { background: #fff6e0; color: var(--gul); }
-.status-hastesak { background: #fdecea; color: var(--rod); }
-.status-venter { background: #ecebf0; color: #55506b; }
-.status-ukjent { background: #eee; color: #777; }
-.status-drukket { background: rgba(201,165,92,0.18); color: var(--gull); }
+.status-klar { background: var(--gronn-bg); color: var(--gronn); }
+.status-snart { background: var(--gul-bg); color: var(--gul); }
+.status-hastesak { background: var(--rod-bg); color: var(--rod); }
+.status-venter { background: oklch(0.9 0.01 55); color: var(--tekst-lys); }
+.status-ukjent { background: var(--bg); color: var(--tekst-lys); }
+.status-drukket { background: oklch(0.9 0.06 75 / 0.4); color: var(--gull); }
 
 .vinkort.drukket { opacity: 0.72; }
 
@@ -330,11 +429,12 @@ textarea { min-height: 70px; resize: vertical; }
 
 .visning-knapp {
   flex: 1;
-  padding: 9px 10px;
+  padding: 11px 10px;
   border-radius: 10px;
   border: 1px solid var(--grense);
   background: var(--kort-bg);
   color: var(--tekst-lys);
+  font-family: inherit;
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
@@ -343,12 +443,12 @@ textarea { min-height: 70px; resize: vertical; }
 .visning-knapp.aktiv {
   background: var(--bordo);
   border-color: var(--bordo);
-  color: white;
+  color: #fdf2f4;
 }
 
 /* ---------- Detaljvisning ---------- */
 
-.tilbake { color: var(--bordo); text-decoration: none; font-size: 0.9rem; display: inline-block; margin-bottom: 8px; }
+.tilbake { color: var(--tekst-lys); text-decoration: none; font-size: 0.9rem; display: inline-block; margin-bottom: 8px; }
 
 .detaljbilde {
   width: 100%;
@@ -372,7 +472,7 @@ textarea { min-height: 70px; resize: vertical; }
   background: var(--kort-bg);
   border: 1px solid var(--grense);
   border-radius: var(--radius);
-  padding: 14px;
+  padding: 16px;
 }
 
 .skann-video {
@@ -421,7 +521,7 @@ textarea { min-height: 70px; resize: vertical; }
 .knapp-lukker:active:not(:disabled) { transform: scale(0.93); }
 .knapp-lukker:disabled { opacity: 0.45; cursor: default; }
 
-.detaljliste { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
+.detaljliste { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; }
 .detaljliste dt { color: var(--tekst-lys); font-size: 0.85rem; }
 .detaljliste dd { margin: 0; font-weight: 600; font-size: 0.9rem; }
 
@@ -429,7 +529,7 @@ textarea { min-height: 70px; resize: vertical; }
 
 .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .tag {
-  background: rgba(107,16,48,0.08);
+  background: oklch(0.9 0.03 15 / 0.5);
   color: var(--bordo);
   font-size: 0.8rem;
   padding: 4px 10px;
@@ -496,40 +596,20 @@ textarea { min-height: 70px; resize: vertical; }
 .knapp {
   flex: 1;
   text-align: center;
-  padding: 12px 16px;
-  border-radius: 10px;
+  padding: 13px 16px;
+  border-radius: 12px;
   border: 1px solid var(--grense);
   background: var(--kort-bg);
   color: var(--tekst);
   text-decoration: none;
-  font-size: 0.95rem;
+  font-family: inherit;
+  font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
   min-width: 120px;
 }
 
-.knapp-primaer { background: var(--bordo); color: white; border-color: var(--bordo); }
-.knapp-fare { background: #fdecea; color: var(--rod); border-color: #f3b9b3; }
-.knapp-gull { background: rgba(201,165,92,0.16); color: #8a6a26; border-color: rgba(201,165,92,0.4); }
+.knapp-primaer { background: var(--bordo); color: #fdf2f4; border-color: var(--bordo); }
+.knapp-fare { background: var(--rod-bg); color: var(--rod); border-color: #f3b9b3; }
+.knapp-gull { background: oklch(0.9 0.06 75 / 0.4); color: var(--gull); border-color: oklch(0.55 0.11 75 / 0.5); }
 .knapp:disabled { opacity: 0.55; cursor: default; }
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #17090f;
-    --kort-bg: #241017;
-    --tekst: #f4ebee;
-    --tekst-lys: #b79aa2;
-    --grense: #3a2028;
-  }
-  .status-klar { background: #16301f; }
-  .status-snart { background: #3a2c05; }
-  .status-hastesak { background: #3a1512; }
-  .status-venter { background: #26212f; }
-  .status-drukket { background: rgba(201,165,92,0.22); }
-  .varsel-hastesak { background: #2c1310; border-color: #5a2620; }
-  .varsel-snart { background: #2c2405; border-color: #5a4a1a; }
-  .vinkort-bilde { background: #351b23; }
-  .knapp-fare { background: #3a1512; }
-  .knapp-gull { background: rgba(201,165,92,0.14); color: var(--gull); border-color: rgba(201,165,92,0.35); }
-  .tag { background: rgba(255,255,255,0.08); }
-}

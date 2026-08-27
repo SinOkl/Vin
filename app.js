@@ -955,9 +955,6 @@ function visVinliste(kategori) {
           </select>
         </div>
       </div>
-      <div class="knapperad">
-        <a class="knapp knapp-primaer" href="#/registrer${erBrennevin ? '/brennevin' : ''}">📷 Legg til ${erBrennevin ? 'brennevin' : 'vin'} med bilde og skanning</a>
-      </div>
       <div id="vinliste-resultat"></div>
     </div>
   `);

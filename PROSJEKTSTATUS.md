@@ -275,6 +275,12 @@ produkter/{ean}                     { kategori, navn, produsent, argang, type, l
       allerede der fra før og er uendret. `importerFraFilerListe()`-hjelperen fra punkt 27
       beholdes (brukes fortsatt av Innstillinger → Sikkerhetskopi sin fil-import).
 
+29. **Selve «med bilde og skanning»-knappen på Vin/Brennevin-fanen er også fjernet**: etter
+    punkt 28 satt fortsatt én knapp igjen øverst på fanen (i tillegg til den flytende
+    bunn-CTA-en «Legg til flaske», som allerede gjorde det samme) — fortsatt to knapper for
+    én og samme handling. Den er nå fjernet fra `visVinliste()`; bunn-CTA-en er bevisst
+    eneste inngang for å legge til flasker.
+
 ## Kjente fallgruver (lært på den harde måten — ikke gjenta)
 
 - **`<input type="file" capture="...">` hopper forbi filvelgeren og går rett til kameraet**

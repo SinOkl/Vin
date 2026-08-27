@@ -234,20 +234,45 @@ function naturligListe(deler) {
   return gyldige.slice(0, -1).join(', ') + ' og ' + gyldige[gyldige.length - 1];
 }
 
+// Felles bygger for alle AI-maler (enkel flaske og flere flasker samtidig) — kun ett sted å
+// endre reglene/instruksjonene, slik at samtlige mal-varianter automatisk følger med.
+// `flertall` er den eneste forgreiningen mellom variantene (åpning, entall/flertall i
+// setningene, og om svaret skal være ett objekt eller en JSON-liste). Selve
+// AI_JSON_SKJEMA_OG_REGLER er allerede delt og uendret av dette.
+function byggAiPrompt({ flertall, ean, brukerNotater, harBilde }) {
+  const grunnlag = flertall
+    ? 'Jeg skal registrere flere flasker i katalogen min på én gang. List opp alle flaskene jeg beskriver under.'
+    : `Jeg skal registrere en flaske i katalogen min. ${harBilde
+      ? 'Jeg limer inn et bilde av etiketten i denne meldingen.'
+      : 'Jeg har ikke noe bilde av etiketten denne gangen, kun det jeg skriver under.'}`;
+  // Entall fortsetter forrige setning med «..., og bruk nettsøk...» (liten forbokstav), mens
+  // flertall starter en ny setning her («Bruk nettsøk...», stor forbokstav) siden det ikke har
+  // noen «identifiser flasken»-setning å henge seg på foran.
+  const soekSetning = flertall
+    ? 'Bruk nettsøk'
+    : `Bruk ${naturligListe([harBilde && 'bildet', ean && 'strekkoden', 'det jeg skriver under'])} til å identifisere flasken, og bruk nettsøk`;
+  const svarform = flertall
+    ? 'en LISTE (array) der hvert element følger nøyaktig dette formatet'
+    : 'nøyaktig dette formatet';
+
+  return `Du er ekspert på vin og brennevin. ${grunnlag}${!flertall && ean ? ` Jeg har også skannet strekkoden (EAN): ${ean}.` : ''} ${soekSetning} til å bekrefte fakta som druesammensetning, region, typisk drikkevindu og smaksprofil${flertall ? ' for hver av dem' : ''} — ikke bare gjett — og søk alltid opp utsalgsprisen på vinmonopolet.no. Svar deretter KUN med gyldig JSON (ingen forklaringstekst, ingen kodeblokk-merking rundt) i ${svarform}:
+
+${AI_JSON_SKJEMA_OG_REGLER}
+- Har du ikke tilgang til nettsøk i det hele tatt, eller finner ikke ${flertall ? 'et produkt' : 'produktet'}: gjør så godt du kan ut fra det jeg skriver${flertall ? '' : ' under'}, og skriv "" på felt (inkludert innkjopspris) du er usikker på — ikke gjett blindt.
+
+${flertall ? 'Flaskene jeg vil registrere' : 'Det jeg selv vet om flasken'}: ${brukerNotater || (flertall ? '(ingen beskrivelse oppgitt)' : '(ingenting mer)')}`;
+}
+
 // Brukt av «Kopier kode og åpne Claude»-knappen i legg-til-flyten (bilde + evt. strekkode).
 // Både ean og bilde er valgfrie — flyten fortsetter selv om kamera/skanning feiler eller blir
 // hoppet over, så prompten tilpasser teksten etter hva vi faktisk har med oss inn hit.
 function byggRegistrerPrompt(ean, brukerNotater, harBilde) {
-  const grunnlag = harBilde
-    ? 'Jeg limer inn et bilde av etiketten i denne meldingen.'
-    : 'Jeg har ikke noe bilde av etiketten denne gangen, kun det jeg skriver under.';
-  const identGrunnlag = naturligListe([harBilde && 'bildet', ean && 'strekkoden', 'det jeg skriver under']);
-  return `Du er ekspert på vin og brennevin. Jeg skal registrere en flaske i katalogen min. ${grunnlag}${ean ? ` Jeg har også skannet strekkoden (EAN): ${ean}.` : ''} Bruk ${identGrunnlag} til å identifisere flasken, og bruk nettsøk til å bekrefte fakta som druesammensetning, region, typisk drikkevindu og smaksprofil — ikke bare gjett — og søk alltid opp utsalgsprisen på vinmonopolet.no. Svar deretter KUN med gyldig JSON (ingen forklaringstekst, ingen kodeblokk-merking rundt) i nøyaktig dette formatet:
+  return byggAiPrompt({ flertall: false, ean, brukerNotater, harBilde });
+}
 
-${AI_JSON_SKJEMA_OG_REGLER}
-- Har du ikke tilgang til nettsøk i det hele tatt, eller finner ikke produktet: gjør så godt du kan ut fra det jeg skriver under, og skriv "" på felt (inkludert innkjopspris) du er usikker på — ikke gjett blindt.
-
-Det jeg selv vet om flasken: ${brukerNotater || '(ingenting mer)'}`;
+// Brukt av «Legg til flere»-siden — ber AI-en om en JSON-liste med flere flasker på én gang.
+function byggRegistrerFlerePrompt(brukerNotater) {
+  return byggAiPrompt({ flertall: true, brukerNotater });
 }
 
 // ---------- Hjelpefunksjoner ----------
@@ -457,6 +482,28 @@ async function importerFraJsonTekst(tekst) {
   return { antall, hoppetOver };
 }
 
+// Deles av Innstillinger sin backup-gjenoppretting og «Legg til flere»-siden: importerer flere
+// JSON-filer (hver kan inneholde ett objekt eller en liste) etter hverandre, og samler opp
+// resultat/feil på tvers av alle filene i stedet for å stoppe ved første feil.
+async function importerFraFilerListe(filer) {
+  let totalAntall = 0;
+  let totalHoppetOver = 0;
+  const feilFiler = [];
+
+  for (const file of filer) {
+    try {
+      const tekst = await file.text();
+      const { antall, hoppetOver } = await importerFraJsonTekst(tekst);
+      totalAntall += antall;
+      totalHoppetOver += hoppetOver;
+    } catch (err) {
+      feilFiler.push(`${file.name}: ${err.message}`);
+    }
+  }
+
+  return { totalAntall, totalHoppetOver, feilFiler };
+}
+
 // ---------- App-state ----------
 
 let bruker = null;
@@ -480,24 +527,18 @@ function visBunnav(vis) {
 }
 
 // Styrer den faste «Legg til flaske»-knappen over bunnmenyen: skjules helt inni selve
-// legg-til/rediger-flyten (der den ville vært forstyrrende/overflødig), ellers pekes den mot
-// riktig kategori (Vin/Brennevin) ut fra hvilken side vi står på.
-function oppdaterLeggTilCta(path, param) {
+// legg-til/rediger-flyten (der den ville vært forstyrrende/overflødig), ellers peker den alltid
+// til samme sted (bilde+skanning-flyten for Vin) uansett hvilken side vi står på — Vin/Brennevin-
+// fanene har nå egne, tydelige knapper for alle tre legg-til-veiene, så denne trenger ikke lenger
+// gjette kategori ut fra konteksten.
+function oppdaterLeggTilCta(path) {
   const cta = document.getElementById('cta-legg-til');
   if (!cta || bunnav.style.display === 'none') return; // pre-innlogging: visBunnav() styrer synligheten
-  if (path === 'ny' || path === 'rediger' || path === 'registrer') {
+  if (path === 'ny' || path === 'rediger' || path === 'registrer' || path === 'importer-flere') {
     cta.style.display = 'none';
     return;
   }
   cta.style.display = '';
-  let kategori = filterState.kategori || 'Vin';
-  if (path === 'brennevin') kategori = 'Brennevin';
-  else if (path === 'viner') kategori = 'Vin';
-  else if (path === 'vin' && param) {
-    const post = alleViner.find((x) => x.id === param);
-    kategori = post && post.kategori === 'Brennevin' ? 'Brennevin' : 'Vin';
-  }
-  document.getElementById('cta-legg-til-lenke').href = kategori === 'Brennevin' ? '#/registrer/brennevin' : '#/registrer';
 }
 
 // ---------- Routing ----------
@@ -533,7 +574,7 @@ function ruteIndre() {
   const [, path, param] = hash.match(/^#\/?([^/]*)\/?([^/]*)$/) || [];
 
   document.querySelectorAll('.navlink').forEach((a) => a.classList.remove('aktiv'));
-  oppdaterLeggTilCta(path, param);
+  oppdaterLeggTilCta(path);
 
   if (!path || path === '') {
     settAktivNav('#/');
@@ -564,6 +605,9 @@ function ruteIndre() {
   } else if (path === 'registrer') {
     settAktivNav(param === 'brennevin' ? '#/brennevin' : '#/viner');
     visRegistrer(param === 'brennevin' ? 'Brennevin' : 'Vin');
+  } else if (path === 'importer-flere') {
+    settAktivNav(param === 'brennevin' ? '#/brennevin' : '#/viner');
+    visImporterFlere(param === 'brennevin' ? 'Brennevin' : 'Vin');
   } else {
     visOversikt();
   }
@@ -937,7 +981,9 @@ function visVinliste(kategori) {
         </div>
       </div>
       <div class="knapperad">
-        <a class="knapp knapp-primaer" href="#/registrer${erBrennevin ? '/brennevin' : ''}">📷 Legg til ${erBrennevin ? 'brennevin' : 'vin'} med bilde og skanning</a>
+        <a class="knapp knapp-primaer" href="#/registrer${erBrennevin ? '/brennevin' : ''}">📷 Legg til med bilde og skanning</a>
+        <a class="knapp" href="#/importer-flere${erBrennevin ? '/brennevin' : ''}">📋 Legg til flere</a>
+        <a class="knapp" href="#/ny${erBrennevin ? '/brennevin' : ''}">✍️ Legg til manuelt</a>
       </div>
       <div id="vinliste-resultat"></div>
     </div>
@@ -1407,6 +1453,102 @@ function registrerSkannSteg(forhandsvalgtKategori, bildeData) {
       if (location.hash.startsWith('#/registrer')) stoppSkann = stopp;
       else stopp();
     });
+  });
+}
+
+// ---------- Visning: Legg til flere samtidig ----------
+
+// Egen side for å registrere mange flasker i ett jafs — enten ved å lime inn en ferdig
+// JSON-liste (fra en AI-chat), laste opp flere .json-filer på én gang, eller kopiere en
+// AI-mal som ber om nettopp en slik liste. Ingen bilde/skanning her — det er poenget med
+// denne veien fremfor «Legg til med bilde og skanning».
+function visImporterFlere(kategori) {
+  const ordKategori = kategori === 'Brennevin' ? 'brennevin' : 'vin';
+  const tilbakeHash = kategori === 'Brennevin' ? '#/brennevin' : '#/viner';
+
+  app.innerHTML = '';
+  app.appendChild(el(`
+    <div class="side">
+      <h1>📋 Legg til flere ${ordKategori === 'brennevin' ? 'flasker brennevin' : 'viner'}</h1>
+      <p class="hjelpetekst">Registrer flere flasker samtidig — lim inn en JSON-liste fra en AI-chat,
+        last opp flere JSON-filer på én gang, eller kopier malen under og be en AI om en liste.</p>
+
+      <section class="detaljseksjon">
+        <h2>🤖 Kopier mal for flere flasker</h2>
+        <p class="hjelpetekst">Beskriv flaskene du vil registrere, trykk «Kopier mal og åpne Claude» —
+          det kopierer forespørselen og åpner Claude i en ny fane klar til å lime inn. Lim
+          JSON-listen AI-en svarer med inn i feltet lenger ned.</p>
+        <label>Flaskene du vil registrere
+          <textarea id="flere-notater-felt" rows="3" placeholder="f.eks. tre rødviner fra Toscana kjøpt på ferie, og en whisky jeg fikk i gave"></textarea>
+        </label>
+        <div class="knapperad">
+          <button type="button" class="knapp knapp-primaer" id="kopier-flere-mal-knapp">Kopier mal og åpne Claude</button>
+        </div>
+        <details class="mal-detaljer">
+          <summary>Vis malen</summary>
+          <pre class="kodeblokk">${escapeHtml(byggRegistrerFlerePrompt(''))}</pre>
+        </details>
+      </section>
+
+      <section class="detaljseksjon">
+        <h2>Lim inn JSON-liste</h2>
+        <label class="importlabel">JSON-svar fra AI-en (en liste, eller flere enkeltposter)
+          <textarea id="flere-json-felt" rows="6" placeholder='[{"navn": "...", ...}, {"navn": "...", ...}]'></textarea>
+        </label>
+        <div class="knapperad">
+          <button type="button" class="knapp knapp-primaer" id="flere-importer-knapp">Importer</button>
+        </div>
+      </section>
+
+      <section class="detaljseksjon">
+        <h2>Eller last opp filer</h2>
+        <label class="importlabel">Velg flere JSON-filer samtidig
+          <input type="file" accept="application/json" id="flere-filer-input" multiple>
+        </label>
+      </section>
+
+      <div class="knapperad">
+        <a class="knapp" href="${tilbakeHash}">Avbryt</a>
+      </div>
+    </div>
+  `));
+
+  const feiletKopiering = () => {
+    document.querySelector('.mal-detaljer').open = true;
+    alert('Fikk ikke tilgang til utklippstavlen. Malen er vist under — merk og kopier den manuelt, og lim den inn i Claude (eller en annen AI-chat).');
+  };
+
+  document.getElementById('kopier-flere-mal-knapp').addEventListener('click', () => {
+    // window.open MÅ kalles synkront i selve klikk-handleren, se samme mønster i visSkjema.
+    window.open('https://claude.ai/new', '_blank', 'noopener');
+    const notater = document.getElementById('flere-notater-felt').value.trim();
+    navigator.clipboard.writeText(byggRegistrerFlerePrompt(notater))
+      .then(() => alert('Forespørselen er kopiert, og Claude åpnes i en ny fane — lim inn der.'))
+      .catch(feiletKopiering);
+  });
+
+  document.getElementById('flere-importer-knapp').addEventListener('click', async () => {
+    const felt = document.getElementById('flere-json-felt');
+    const tekst = felt.value.trim();
+    if (!tekst) { alert('Lim inn JSON-teksten fra AI-en først.'); return; }
+    try {
+      const { antall, hoppetOver } = await importerFraJsonTekst(tekst);
+      alert(`Importerte ${antall} post(er).${hoppetOver ? ` Hoppet over ${hoppetOver} som manglet navn.` : ''}`);
+      location.hash = tilbakeHash;
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+
+  document.getElementById('flere-filer-input').addEventListener('change', async (e) => {
+    const filer = Array.from(e.target.files || []);
+    if (!filer.length) return;
+    const { totalAntall, totalHoppetOver, feilFiler } = await importerFraFilerListe(filer);
+    let melding = `Importerte ${totalAntall} post(er) fra ${filer.length} fil(er).`;
+    if (totalHoppetOver) melding += ` Hoppet over ${totalHoppetOver} som manglet navn.`;
+    if (feilFiler.length) melding += `\n\nFeil i ${feilFiler.length} fil(er):\n${feilFiler.join('\n')}`;
+    alert(melding);
+    if (totalAntall) location.hash = tilbakeHash;
   });
 }
 
@@ -1912,20 +2054,7 @@ function visInnstillinger() {
     const filer = Array.from(e.target.files || []);
     if (!filer.length) return;
 
-    let totalAntall = 0;
-    let totalHoppetOver = 0;
-    const feilFiler = [];
-
-    for (const file of filer) {
-      try {
-        const tekst = await file.text();
-        const { antall, hoppetOver } = await importerFraJsonTekst(tekst);
-        totalAntall += antall;
-        totalHoppetOver += hoppetOver;
-      } catch (err) {
-        feilFiler.push(`${file.name}: ${err.message}`);
-      }
-    }
+    const { totalAntall, totalHoppetOver, feilFiler } = await importerFraFilerListe(filer);
 
     let melding = `Importerte ${totalAntall} post(er) fra ${filer.length} fil(er).`;
     if (totalHoppetOver) melding += ` Hoppet over ${totalHoppetOver} som manglet navn.`;

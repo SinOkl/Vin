@@ -233,6 +233,27 @@ produkter/{ean}                     { kategori, navn, produsent, argang, type, l
     steg er å teste Oversikt/Viner/Detalj-sidene med ekte data på telefon, og huske
     `sw.js`/versjonsmerke er allerede bumpet (v2.11.0 / `vinkjeller-v32`).
 
+27. **Tre tydelige legg-til-veier på Vin/Brennevin-fanen**: `visVinliste()` viste tidligere
+    kun én knapp («med bilde og skanning»), pluss den flytende bunn-CTA-en som gjorde det
+    samme — i praksis to knapper for én og samme flyt. Nå viser fanen tre knapper:
+    bilde+skanning (uendret, `#/registrer`), **«Legg til flere»** (ny rute
+    `#/importer-flere`, evt. `/brennevin`, ny `visImporterFlere()`) og **«Legg til
+    manuelt»** (ren lenke til den allerede eksisterende `#/ny`-ruten — ingen ny kode der).
+    «Legg til flere» samler tre måter å registrere mange flasker på ett sted: lim inn en
+    JSON-liste (kaller den eksisterende `importerFraJsonTekst`, uendret), last opp flere
+    `.json`-filer samtidig (samme funksjon som Innstillinger → Sikkerhetskopi alltid har
+    hatt, nå trukket ut til delt `importerFraFilerListe()` så begge stedene bruker samme
+    logikk), og en egen «kopier AI-mal»-knapp som ber om en JSON-**liste** i stedet for ett
+    objekt. AI-malene er refaktorert til én delt bygger, `byggAiPrompt({ flertall, ... })`
+    — `byggRegistrerPrompt` (enkel flaske) og den nye `byggRegistrerFlerePrompt` (flere)
+    er nå tynne wrappere rundt denne, slik at fremtidige endringer i AI-instruksjonene
+    (søk-/pris-regler, `AI_JSON_SKJEMA_OG_REGLER`) automatisk følger med i begge variantene
+    i stedet for å måtte oppdateres to steder. Den flytende bunn-CTA-en («Legg til
+    flaske») pekte tidligere til riktig kategori ut fra hvilken fane du sto på — det er nå
+    fjernet med vilje (avklart med Sindre): den peker alltid til samme sted
+    (`#/registrer`, Vin) uansett hvilken side du er på, siden fanene selv nå har alle tre
+    valgene tydelig framme.
+
 ## Kjente fallgruver (lært på den harde måten — ikke gjenta)
 
 - **`<input type="file" capture="...">` hopper forbi filvelgeren og går rett til kameraet**

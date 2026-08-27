@@ -254,6 +254,27 @@ produkter/{ean}                     { kategori, navn, produsent, argang, type, l
     (`#/registrer`, Vin) uansett hvilken side du er på, siden fanene selv nå har alle tre
     valgene tydelig framme.
 
+28. **Punkt 27 reversert etter tilbakemelding — for mange knapper**: tre knapper på
+    Vin/Brennevin-fanen ble for mye. Fanen er tilbake til kun én knapp («📷 Legg til
+    vin/brennevin med bilde og skanning»), akkurat som før punkt 27. Den egne
+    «Legg til flere»-siden (`#/importer-flere`, `visImporterFlere()`) og den separate
+    batch-AI-malen (`byggRegistrerFlerePrompt`/`byggAiPrompt`) er fjernet igjen — koden
+    fantes i ett pushet commit, men er nå slettet. I stedet:
+    - **«Legg til manuelt»** ligger nå som egen knapp *under* «Hopp over bilde»/«Avbryt»
+      på selve bilde-steget (`registrerBildeSteg`) — synlig idet man skal ta bildet av
+      etiketten, ikke som en konkurrerende knapp på fanen. Kamera-forhåndsvisningen
+      (`.kamera-boks .skann-video`) fikk redusert maks-høyde (60vh → 44vh, kun for dette
+      steget, ikke skanne-steget) slik at den ekstra knapperaden får plass på skjermen
+      uten scrolling.
+    - **«Legg til flere» (batch)** er slått sammen tilbake inn i den ordinære AI-malen —
+      `byggRegistrerPrompt` ber nå AI-en svare med en JSON-**liste** (i stedet for ett
+      objekt) hvis brukeren beskriver/limer inn bilde av flere flasker i samme melding
+      (flere etiketter, strekkoder eller navn). Forklaringsteksten i skjemaets AI-seksjon
+      (`visSkjema`, delt av både `#/ny` og strekkode-flyten) er utvidet for å gjøre dette
+      tydelig — selve import-logikken (`ai-bruk-knapp` → `importerFraJsonTekst`) var
+      allerede der fra før og er uendret. `importerFraFilerListe()`-hjelperen fra punkt 27
+      beholdes (brukes fortsatt av Innstillinger → Sikkerhetskopi sin fil-import).
+
 ## Kjente fallgruver (lært på den harde måten — ikke gjenta)
 
 - **`<input type="file" capture="...">` hopper forbi filvelgeren og går rett til kameraet**

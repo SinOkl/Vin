@@ -488,6 +488,13 @@ textarea { min-height: 70px; resize: vertical; }
   position: relative;
 }
 
+/* Bilde-steget har en ekstra knapperad («Legg til manuelt») under lukkerknappen — video-
+   forhåndsvisningen kuttes litt lavere enn skanne-stegets enn så alt får plass uten scrolling. */
+.kamera-boks .skann-video {
+  max-height: 44vh;
+  margin-bottom: 8px;
+}
+
 .kamera-ramme {
   position: absolute;
   top: 50%;

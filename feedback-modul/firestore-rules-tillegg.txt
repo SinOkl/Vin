@@ -6,14 +6,14 @@ adminUid()-funksjon (eller tilsvarende konstant) som peker på den/de som skal s
 bytt ut adminUid() med det som passer i den aktuelle appen.
 
     // Tilbakemeldingsmodulen (feedback-modul/). Alle innloggede kan sende inn (kun opprette,
-    // ikke lese andres), kun admin kan se/liste/endre status. Ingen kan slette.
+    // ikke lese andres), kun admin kan se/liste/endre status/slette.
     match /tilbakemeldinger/{id} {
       allow create: if innlogget()
         && request.resource.data.status == 'ny'
         && (request.resource.data.bruker == null || request.resource.data.bruker.uid == request.auth.uid);
       allow get, list: if innlogget() && request.auth.uid == adminUid();
       allow update: if innlogget() && request.auth.uid == adminUid();
-      allow delete: if false;
+      allow delete: if innlogget() && request.auth.uid == adminUid();
     }
 
 I Vinkjelleren spesifikt: bytt "innlogget()" over til "innlogget() && erGodkjent()" (samme

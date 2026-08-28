@@ -38,8 +38,10 @@ const EGNE_STILER = `
   .tbm-meta { font-size: 0.78rem; color: var(--tbm-tekst-lys); }
   .tbm-adminrad-tekst { margin: 0; white-space: pre-wrap; font-size: 0.92rem; }
   .tbm-miniatyr { max-width: 140px; max-height: 140px; border-radius: 8px; border: 1px solid var(--tbm-grense); cursor: zoom-in; display: block; }
+  .tbm-adminrad-bunn { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
   .tbm-statusvelger { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--tbm-tekst-lys); font-weight: 600; }
   .tbm-statusvelger select { font: inherit; border: 1px solid var(--tbm-grense); border-radius: 8px; padding: 4px 8px; color: var(--tbm-tekst); }
+  .tbm-slett-knapp { font-size: 0.8rem; padding: 5px 10px; }
 
   .tbm-lightbox { position: fixed; inset: 0; z-index: 2147483002; background: rgba(10,10,15,0.85);
     display: flex; align-items: center; justify-content: center; padding: 20px; cursor: zoom-out; }
@@ -109,6 +111,13 @@ export class TilbakemeldingAdmin extends HTMLElement {
         this._lightbox.hidden = false;
       });
     });
+    this._listeEl.querySelectorAll('[data-slett-id]').forEach((knapp) => {
+      knapp.addEventListener('click', () => {
+        if (!confirm('Slette denne tilbakemeldingen? Dette kan ikke angres.')) return;
+        knapp.disabled = true;
+        this._feedbackDB.slett(knapp.dataset.slettId).catch((err) => { alert(err.message); knapp.disabled = false; });
+      });
+    });
   }
 
   _rad(f) {
@@ -122,11 +131,14 @@ export class TilbakemeldingAdmin extends HTMLElement {
         </div>
         <p class="tbm-adminrad-tekst">${escapeHtml(f.tekst)}</p>
         ${f.bilde ? `<img class="tbm-miniatyr" src="${f.bilde}" alt="Vedlagt skjermbilde">` : ''}
-        <label class="tbm-statusvelger">Status
-          <select data-status-id="${escapeHtml(f.id)}">
-            ${TILBAKEMELDING_STATUSER.map((s) => `<option value="${s}" ${s === f.status ? 'selected' : ''}>${s}</option>`).join('')}
-          </select>
-        </label>
+        <div class="tbm-adminrad-bunn">
+          <label class="tbm-statusvelger">Status
+            <select data-status-id="${escapeHtml(f.id)}">
+              ${TILBAKEMELDING_STATUSER.map((s) => `<option value="${s}" ${s === f.status ? 'selected' : ''}>${s}</option>`).join('')}
+            </select>
+          </label>
+          <button type="button" class="tbm-knapp tbm-knapp-fare tbm-slett-knapp" data-slett-id="${escapeHtml(f.id)}">🗑 Slett</button>
+        </div>
       </div>
     `;
   }

@@ -3,10 +3,10 @@
 // ingen egen Firebase-app og vet ingenting om resten av vertsappens datamodell.
 //
 // Gjenbruk i en ny app: bytt evt. ut hele denne filen med en annen backend (REST-API,
-// Supabase, ...) så lenge den eksporterer samme grensesnitt — {send, abonner, settStatus} —
-// widget- og admin-komponentene bryr seg ikke om hvor dataen faktisk lagres.
+// Supabase, ...) så lenge den eksporterer samme grensesnitt — {send, abonner, settStatus,
+// slett} — widget- og admin-komponentene bryr seg ikke om hvor dataen faktisk lagres.
 import {
-  collection, doc, addDoc, updateDoc, query, orderBy, onSnapshot, serverTimestamp,
+  collection, doc, addDoc, updateDoc, deleteDoc, query, orderBy, onSnapshot, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 export const TILBAKEMELDING_TYPER = ['Forslag', 'Feil', 'Annet'];
@@ -48,6 +48,10 @@ export function lagFeedbackDB(db, samlingsnavn = 'tilbakemeldinger') {
     async settStatus(id, status) {
       if (!TILBAKEMELDING_STATUSER.includes(status)) throw new Error(`Ugyldig status: ${status}`);
       await updateDoc(doc(kolleksjon, id), { status });
+    },
+
+    async slett(id) {
+      await deleteDoc(doc(kolleksjon, id));
     },
   };
 }

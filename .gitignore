@@ -1,0 +1,5 @@
+# Lokale admin-verktøy (verktoy/) — Node-baserte dev-skript, ikke en del av selve appen
+# (som fortsatt er build-fri vanilla JS servert direkte fra GitHub Pages).
+verktoy/node_modules/
+verktoy/service-account.json
+verktoy/skjermbilder/

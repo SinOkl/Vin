@@ -1,0 +1,12 @@
+{
+  "name": "vinkjeller-verktoy",
+  "private": true,
+  "type": "module",
+  "description": "Lokale admin-skript for Vinkjelleren (kjøres med Node.js). Ikke en del av selve appen, som fortsatt er build-fri vanilla JS i nettleseren — se ../PROSJEKTSTATUS.md.",
+  "scripts": {
+    "tilbakemeldinger": "node tilbakemeldinger-cli.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.3.0"
+  }
+}

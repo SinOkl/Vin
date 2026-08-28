@@ -328,6 +328,47 @@ produkter/{ean}                     { kategori, navn, produsent, argang, type, l
       underveis i denne økten — se fallgruve under om hvorfor det likevel ikke endrer noe i
       selve Vinkjeller-prosjektets bygge-/deploy-oppsett.
 
+31. **Tilbakemeldingsmodul — to feil rettet etter live-testing på ekte telefon**:
+    - Komponentens egen flytende knapp la seg oppå den eksisterende flytende
+      «Legg til flaske»-CTA-en (`#cta-legg-til` i `index.html`) — samme hjørne, kolliderte
+      visuelt. `tilbakemelding-widget.js` fikk et nytt `visFlytknapp`-konfigfelt (default
+      `true`, men satt til `false` i `monterTilbakemeldingWidget()` i `app.js`); inngangen er
+      i stedet en vanlig «Gi tilbakemelding»-knapp øverst på Innstillinger-siden (synlig for
+      alle brukere, ikke bare admin), som kaller `tilbakemeldingWidget.apne()` direkte.
+    - Send/Avbryt/Angre strek-knappene havnet visuelt bak det vedlagte skjermbildet. Rotårsak:
+      `.tbm-canvasstack` (containeren rundt bunn-canvaset og tegne-canvaset) fikk aldri en
+      egen høyde — begge canvasene var `position: absolute`, og et forsøk på å gjøre
+      bunn-canvaset `position: relative` via en egen klasse (`.tbm-canvas-bunn`) tapte for
+      CSS-spesifisitet mot den generelle `.tbm-canvasstack canvas`-regelen (11 vs. 10 i
+      spesifisitet) og ble derfor aldri brukt. En `position: relative`-boks uten noe
+      in-flow-innhold kollapser til 0 høyde, så resten av modalen «forsvant» inn i det
+      (fortsatt synlige, men overlappende) bildet. Fikset ved å sette en eksplisitt
+      px-bredde/-høyde på `.tbm-canvasstack` fra JS (`_settCanvasstorrelse()`, kalt når et
+      bilde lastes inn) ut fra bildets faktiske proporsjoner, i stedet for å stole på at ett
+      av de to overlappende canvasene skulle gi containeren størrelse.
+
+32. **Slette tilbakemeldinger + eget CLI-verktøy for å hente dem inn i Claude Code**:
+    - `firestore.rules` sin `tilbakemeldinger`-blokk tillot ikke sletting i det hele tatt
+      (`allow delete: if false`). Endret til `if innlogget() && request.auth.uid ==
+      adminUid()`, og `tilbakemelding-admin.js` fikk en 🗑-knapp per rad (med
+      `confirm()`-bekreftelse) som kaller den nye `feedbackDB.slett(id)`
+      (`feedback-db.js` fikk en `slett()`-metode i tillegg til `send/abonner/settStatus`).
+      Samme endring i `feedback-modul/firestore-rules-tillegg.txt` for portabilitet.
+    - Ny `verktoy/`-mappe (Node.js, **ikke** en del av selve appen — se fallgruve under):
+      `verktoy/tilbakemeldinger-cli.js` bruker Firebase Admin SDK (`firebase-admin`,
+      installert via `npm install` i `verktoy/`, se `verktoy/package.json`) til å
+      liste/endre status/slette tilbakemeldinger direkte fra terminalen, uten å gå via
+      appens UI. Krever en service account-nøkkel (`verktoy/service-account.json`,
+      lastes ned fra Firebase Console → Prosjektinnstillinger → Service accounts — **denne
+      filen er en hemmelighet på linje med et passord** og er lagt til i en ny
+      `.gitignore` i prosjektroten sammen med `verktoy/node_modules/` og
+      `verktoy/skjermbilder/`, aldri commit den). Vedlagte skjermbilder skrives ut som
+      `verktoy/skjermbilder/<id>.jpg` i stedet for å dumpes som rå base64 i terminalen, slik
+      at Claude kan lese dem direkte. Se `verktoy/README.md` for full oppskrift. Formålet:
+      Sindre kan be Claude Code kjøre `node tilbakemeldinger-cli.js` for å hente inn nye
+      tilbakemeldinger (inkl. skjermbilder) rett i samtalen og jobbe med dem sammen, i
+      stedet for å måtte lese dem i appen eller Firebase Console først.
+
 ## Kjente fallgruver (lært på den harde måten — ikke gjenta)
 
 - **`<input type="file" capture="...">` hopper forbi filvelgeren og går rett til kameraet**
@@ -365,6 +406,23 @@ produkter/{ean}                     { kategori, navn, produsent, argang, type, l
   lim-inn-håndtering plukker bildet og dropper teksten** når begge er representasjoner av
   samme utklipp. Løsningen ble to separate knapper/kopieringer (bilde for seg, tekst for
   seg) i stedet for å stole på at mottakeren håndterer flere formater i samme utklipp.
+- **To `position: absolute`-elementer oppå hverandre uten en `aspect-ratio`/eksplisitt
+  størrelse gir en usynlig 0×0-forelder.** En `position: relative`-container med bare
+  absolutt-posisjonerte barn får ingen egen høyde (de bidrar ikke til auto-høyde), så resten
+  av siden "forsvinner" visuelt bak/inni det overflytende innholdet i stedet for å bli
+  dyttet under det. Sett eksplisitt bredde/høyde (fra JS, ut fra faktisk innhold) på
+  containeren i stedet for å stole på at ett av barna skal gi den størrelse — se
+  `_settCanvasstorrelse()` i `feedback-modul/tilbakemelding-widget.js` (punkt 31).
+- **CSS-spesifisitet slår kildeorden.** En senere regel med LAVERE spesifisitet (f.eks. én
+  enkelt klasse) taper mot en tidligere regel med HØYERE spesifisitet (f.eks. klasse +
+  type-selektor), uansett rekkefølge i filen — akkurat dette var årsaken til punktet over.
+  Dobbeltsjekk spesifisitet, ikke bare kildeorden, når en "override"-regel ikke later til å
+  ha noen effekt.
+- **`verktoy/`-mappen (Node-baserte admin-skript, se punkt 32) er bevisst holdt utenfor
+  selve appen** — `node_modules/`, `package-lock.json` og `service-account.json` ligger kun
+  lokalt (gitignored) og lastes aldri av nettleseren/GitHub Pages. Service account-nøkkelen
+  gir full tilgang til Firestore uavhengig av `firestore.rules` — den er like sensitiv som
+  et passord.
 
 ## Kjente mangler / naturlige neste steg
 

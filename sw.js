@@ -1,4 +1,4 @@
-const CACHE_NAVN = 'vinkjeller-v35';
+const CACHE_NAVN = 'vinkjeller-v36';
 const APP_SHELL = [
   './',
   './index.html',
@@ -12,6 +12,11 @@ const APP_SHELL = [
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './feedback-modul/feedback-db.js',
+  './feedback-modul/bildeverktoy.js',
+  './feedback-modul/stiler.js',
+  './feedback-modul/tilbakemelding-widget.js',
+  './feedback-modul/tilbakemelding-admin.js',
 ];
 
 self.addEventListener('install', (event) => {

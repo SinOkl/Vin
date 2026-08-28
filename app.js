@@ -1,5 +1,8 @@
 import { VinDB, KjellerDB, ProduktDB, BrukerDB, ADMIN_UID } from './db.js';
-import { loggInnMedGoogle, loggUt, paInnloggingsendring } from './auth.js';
+import { loggInnMedGoogle, loggUt, paInnloggingsendring, gjeldendeBruker } from './auth.js';
+import { db } from './firebase-init.js';
+import './feedback-modul/tilbakemelding-widget.js';
+import './feedback-modul/tilbakemelding-admin.js';
 
 // ---------- Konstanter ----------
 
@@ -495,6 +498,7 @@ let brukerAvslutt = null; // avslutter abonnement på eget brukere/{uid}-dokumen
 let sisteBrukerStatus = null; // forrige kjente status, for å unngå å restarte lastKjellereOgStart() på hver snapshot
 let ventendeAvslutt = null; // avslutter admins abonnement på ventende brukere ved utlogging
 let ventendeBrukere = []; // ventende brukere, kun populert/relevant for ADMIN_UID
+let tilbakemeldingWidget = null; // <tilbakemelding-widget>-elementet, montert kun for godkjente brukere
 const app = document.getElementById('app');
 const bunnav = document.querySelector('.bunnav');
 
@@ -580,6 +584,9 @@ function ruteIndre() {
   } else if (path === 'godkjenninger') {
     settAktivNav('#/innstillinger');
     visGodkjenninger();
+  } else if (path === 'tilbakemeldinger') {
+    settAktivNav('#/innstillinger');
+    visTilbakemeldinger();
   } else if (path === 'registrer') {
     settAktivNav(param === 'brennevin' ? '#/brennevin' : '#/viner');
     visRegistrer(param === 'brennevin' ? 'Brennevin' : 'Vin');
@@ -677,6 +684,7 @@ function startBrukerAbonnement() {
     if (!brukerDok) return; // venter på at BrukerDB.sikreEget() fullfører opprettelsen
     if (brukerDok.status === 'godkjent') {
       if (bruker.uid === ADMIN_UID) startVentendeAbonnement();
+      monterTilbakemeldingWidget();
       if (sisteBrukerStatus !== 'godkjent') {
         sisteBrukerStatus = 'godkjent';
         lastKjellereOgStart().catch(visOppstartsfeil);
@@ -686,6 +694,32 @@ function startBrukerAbonnement() {
       visVenteskjerm(brukerDok.status);
     }
   });
+}
+
+// Monterer <tilbakemelding-widget> (feedback-modul/) én gang for godkjente brukere — se
+// feedback-modul/README.md for hvordan komponenten selv er bygget opp. Idempotent: trygt
+// å kalle på hver bruker-snapshot uten å montere flere knapper.
+function monterTilbakemeldingWidget() {
+  if (tilbakemeldingWidget) return;
+  tilbakemeldingWidget = document.createElement('tilbakemelding-widget');
+  tilbakemeldingWidget.style.setProperty('--tbm-primaer', 'var(--bordo)');
+  tilbakemeldingWidget.style.setProperty('--tbm-primaer-hover', 'var(--bordo-mork)');
+  tilbakemeldingWidget.style.setProperty('--tbm-font', 'var(--font-brod)');
+  tilbakemeldingWidget.style.setProperty('--tbm-radius', 'var(--radius)');
+  document.body.appendChild(tilbakemeldingWidget);
+  tilbakemeldingWidget.konfigurer({
+    db,
+    hentBrukerInfo: () => {
+      const b = gjeldendeBruker();
+      return b ? { uid: b.uid, navn: b.displayName || b.email || 'Ukjent', epost: b.email || '' } : null;
+    },
+  });
+}
+
+function fjernTilbakemeldingWidget() {
+  if (!tilbakemeldingWidget) return;
+  tilbakemeldingWidget.remove();
+  tilbakemeldingWidget = null;
 }
 
 function visVenteskjerm(status) {
@@ -720,6 +754,7 @@ paInnloggingsendring((innloggetBruker) => {
 
   if (!bruker) {
     visBunnav(false);
+    fjernTilbakemeldingWidget();
     visInnlogging();
     return;
   }
@@ -1814,6 +1849,14 @@ function visInnstillinger() {
         <div class="knapperad">
           <a class="knapp knapp-primaer" href="#/godkjenninger">Se godkjenninger</a>
         </div>
+      </section>
+
+      <section class="detaljseksjon">
+        <h2>🗣️ Tilbakemeldinger</h2>
+        <p class="hjelpetekst">Forslag og tilbakemeldinger sendt inn fra «💬 Tilbakemelding»-knappen.</p>
+        <div class="knapperad">
+          <a class="knapp knapp-primaer" href="#/tilbakemeldinger">Se tilbakemeldinger</a>
+        </div>
       </section>` : ''}
 
       <section class="detaljseksjon">
@@ -1995,6 +2038,29 @@ function visGodkjenninger() {
       catch (err) { alert(err.message); knapp.disabled = false; }
     });
   });
+}
+
+// ---------- Visning: Tilbakemeldinger (kun ADMIN_UID) ----------
+// Selve listen/statushåndteringen skjer i <tilbakemelding-admin> (feedback-modul/) — denne
+// siden gjør bare admin-sjekken og monterer komponenten, samme mønster som Godkjenninger.
+
+function visTilbakemeldinger() {
+  if (bruker.uid !== ADMIN_UID) { location.hash = '#/'; return; }
+  app.innerHTML = '';
+  app.appendChild(el(`
+    <div class="side">
+      <h1>Tilbakemeldinger</h1>
+      <div id="tilbakemelding-admin-plass"></div>
+      <div class="knapperad" style="margin-top:14px;"><a class="knapp" href="#/innstillinger">Tilbake</a></div>
+    </div>
+  `));
+  const adminListe = document.createElement('tilbakemelding-admin');
+  adminListe.style.setProperty('--tbm-primaer', 'var(--bordo)');
+  adminListe.style.setProperty('--tbm-primaer-hover', 'var(--bordo-mork)');
+  adminListe.style.setProperty('--tbm-font', 'var(--font-brod)');
+  adminListe.style.setProperty('--tbm-radius', 'var(--radius)');
+  document.getElementById('tilbakemelding-admin-plass').appendChild(adminListe);
+  adminListe.konfigurer({ db });
 }
 
 // ---------- Init ----------

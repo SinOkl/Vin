@@ -28,8 +28,11 @@ for det som gjenstår.
 - Firebase: Authentication (Google-innlogging) + Firestore (database)
 - Hosting: GitHub Pages (auto-deploy fra `main`-branch)
 - PWA: `manifest.webmanifest` + `sw.js` gjør den installerbar + delvis offline
-- **Viktig:** denne PC-en har verken Node.js, npm eller Python installert — hold deg til
-  vanilla JS og CDN-baserte ES-module-imports (`https://www.gstatic.com/firebasejs/...`)
+- **Viktig:** Node.js og Python ble installert på denne PC-en (via `winget`, se punkt 30) —
+  men prosjektet har fortsatt bevisst **ingen** build-verktøy/bundler. Hold deg til vanilla
+  JS og CDN-baserte ES-module-imports (`https://www.gstatic.com/firebasejs/...`) med mindre
+  Sindre eksplisitt ber om å legge til et byggetrinn — det er en egen, større beslutning som
+  påvirker hele dev-/deploy-flyten, ikke noe å gjøre i forbifarten for én funksjon.
 
 ## Filer
 
@@ -280,6 +283,50 @@ produkter/{ean}                     { kategori, navn, produsent, argang, type, l
     bunn-CTA-en «Legg til flaske», som allerede gjorde det samme) — fortsatt to knapper for
     én og samme handling. Den er nå fjernet fra `visVinliste()`; bunn-CTA-en er bevisst
     eneste inngang for å legge til flasker.
+
+30. **Tilbakemeldingsmodul (`feedback-modul/`) — gjenbrukbar «forslag og tilbakemelding»**:
+    egen mappe, bevisst bygget som et *frittstående, gjenbrukbart* verktøy Sindre kan kopiere
+    inn i fremtidige apper, ikke bare en Vinkjeller-spesifikk funksjon. Arkitekturvalget
+    (etter en egen vurderingsrunde av språk/fleksibilitet) er ekte
+    **Web Components (Custom Elements + Shadow DOM)** i vanilla JS — ingen npm, ingen
+    byggetrinn (i tråd med "ingen build-verktøy"-prinsippet), men likevel gjenbrukbart i en
+    hvilken som helst fremtidig app/rammeverk, siden Custom Elements er en nettleserstandard.
+    Shadow DOM gir ekte CSS-isolasjon (kolliderer aldri med vertsappens `styles.css`), mens
+    CSS custom properties (`--tbm-*`) bevisst krysser Shadow DOM-grensen slik at vertsappen
+    likevel kan temae widgeten (Vinkjelleren setter `--tbm-primaer` osv. til sine egne
+    `--bordo`/`--font-brod`-tokens i `monterTilbakemeldingWidget()`/`visTilbakemeldinger()`
+    i `app.js`). Datalaget (`feedback-db.js`) er isolert bak et lite `{send, abonner,
+    settStatus}`-grensesnitt slik at en fremtidig app uten Firebase kan bytte backend uten å
+    røre UI-komponentene — se `feedback-modul/README.md` for full gjenbruksoppskrift og API.
+    - `<tilbakemelding-widget>`: flytende knapp (montert i `startBrukerAbonnement()` sin
+      `status === 'godkjent'`-gren, fjernet ved utlogging) → modal med type/fritekst, pluss
+      valgfritt skjermbilde. Skjermbilde er **kun filopplasting**
+      (`<input type="file" accept="image/*">`, bevisst uten `capture`-attributt — samme
+      lærdom som er dokumentert under, se fallgruvelisten) — ikke `getDisplayMedia`, som ble
+      vurdert og forkastet pga. svak/manglende støtte i installerte PWA-er på iOS Safari.
+      Valgt bilde tegnes inn på et `<canvas>` med et gjennomsiktig strek-lag oppå
+      (Pointer Events, fungerer likt for mus/touch/penn) hvor brukeren kan ringe inn/markere
+      feil med en rød frihåndspenn («Angre strek»/«Fjern bilde» finnes). Ved innsending
+      flates lagene sammen og komprimeres til JPEG (`bildeverktoy.js`, samme
+      skaler-til-maks-bredde-prinsipp som `skalerOgKomprimerDataUrl` i `app.js`, men portert
+      inn i modulen selv — den skal ikke importere fra `app.js`) og lagres som base64 direkte
+      i Firestore-dokumentet (ingen Storage/Blaze, samme begrunnelse som etikettbilder).
+    - `<tilbakemelding-admin>`: sanntidsliste med statusfilter (ny/lest/løst), miniatyrbilde
+      m/lightbox og statusnedtrekk per rad. Monteres på ny rute `#/tilbakemeldinger`
+      (`visTilbakemeldinger()` i `app.js`, samme admin-vaktmønster som `#/godkjenninger`:
+      `if (bruker.uid !== ADMIN_UID) { location.hash = '#/'; return; }`), lenket fra et nytt
+      «🗣️ Tilbakemeldinger»-avsnitt i Innstillinger (rett under Godkjenninger-boksen). Ingen
+      ny navbar-badge for dette — ville krevd å flette med den eksisterende
+      ventende-brukere-badgen på samme navlink, ikke verdt kompleksiteten foreløpig.
+    - `firestore.rules` har fått en ny `match /tilbakemeldinger/{id}`-blokk (enhver
+      `erGodkjent()`-bruker kan opprette, kun `adminUid()` kan lese/liste/endre status,
+      ingen kan slette) — **må limes inn manuelt i Firebase Console** før innsending faktisk
+      fungerer, se `feedback-modul/firestore-rules-tillegg.txt` for den rene,
+      Vinkjeller-uavhengige originalversjonen av samme blokk (til bruk i en fremtidig app).
+      **Ikke testet med ekte innlogging/innsending ennå.**
+    - Node.js og Python ble installert på maskinen på Sindres forespørsel (via `winget`)
+      underveis i denne økten — se fallgruve under om hvorfor det likevel ikke endrer noe i
+      selve Vinkjeller-prosjektets bygge-/deploy-oppsett.
 
 ## Kjente fallgruver (lært på den harde måten — ikke gjenta)
 

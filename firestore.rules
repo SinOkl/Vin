@@ -120,5 +120,17 @@ service cloud.firestore {
       allow update: if innlogget() && request.auth.uid == adminUid();
       allow delete: if false;
     }
+
+    // Tilbakemeldingsmodulen (feedback-modul/, se firestore-rules-tillegg.txt der for den
+    // gjenbrukbare originalversjonen av denne blokken). Enhver godkjent bruker kan sende inn
+    // (kun opprette, ikke lese andres), kun admin kan se/liste/endre status. Ingen kan slette.
+    match /tilbakemeldinger/{id} {
+      allow create: if innlogget() && erGodkjent()
+        && request.resource.data.status == 'ny'
+        && (request.resource.data.bruker == null || request.resource.data.bruker.uid == request.auth.uid);
+      allow get, list: if innlogget() && request.auth.uid == adminUid();
+      allow update: if innlogget() && request.auth.uid == adminUid();
+      allow delete: if false;
+    }
   }
 }

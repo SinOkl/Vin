@@ -1,0 +1,21 @@
+Lim denne blokken inn i vertsappens firestore.rules, inni service cloud.firestore sitt
+match /databases/{database}/documents { ... }-blokk (samme nivå som de andre match-blokkene).
+
+Forutsetter at appen allerede har en innlogget()-funksjon (request.auth != null) og en
+adminUid()-funksjon (eller tilsvarende konstant) som peker på den/de som skal se listen —
+bytt ut adminUid() med det som passer i den aktuelle appen.
+
+    // Tilbakemeldingsmodulen (feedback-modul/). Alle innloggede kan sende inn (kun opprette,
+    // ikke lese andres), kun admin kan se/liste/endre status. Ingen kan slette.
+    match /tilbakemeldinger/{id} {
+      allow create: if innlogget()
+        && request.resource.data.status == 'ny'
+        && (request.resource.data.bruker == null || request.resource.data.bruker.uid == request.auth.uid);
+      allow get, list: if innlogget() && request.auth.uid == adminUid();
+      allow update: if innlogget() && request.auth.uid == adminUid();
+      allow delete: if false;
+    }
+
+I Vinkjelleren spesifikt: bytt "innlogget()" over til "innlogget() && erGodkjent()" (samme
+mønster som resten av filen — kun godkjente medlemmer skal kunne sende inn), og bruk den
+eksisterende adminUid()-funksjonen som allerede finnes i firestore.rules.

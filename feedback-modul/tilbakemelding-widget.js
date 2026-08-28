@@ -115,18 +115,23 @@ const EGNE_STILER = `
   .tbm-canvaswrap { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
   .tbm-canvaswrap[hidden] { display: none; }
   .tbm-hjelp { margin: 0; font-size: 0.8rem; color: var(--tbm-tekst-lys); }
-  .tbm-canvasstack { position: relative; width: 100%; max-width: 320px; }
+  /* Bredde/høyde settes eksplisitt i px fra JS (se _settCanvasstørrelse) ut fra det faktiske
+     bildet — en position:relative-boks uten annet innhold gir ingen egen høyde, og begge
+     canvasene MÅ være position:absolute (oppå hverandre) for at tegne-laget skal ligge
+     nøyaktig over bunnbildet. Uten eksplisitt størrelse her kollapser boksen til 0 høyde og
+     resten av modalen (Send/Avbryt-knappene) havner visuelt bak det (fortsatt synlige, men
+     overlappede) bildet. */
+  .tbm-canvasstack { position: relative; flex: none; }
   .tbm-canvasstack canvas {
     position: absolute;
-    top: 0; left: 0;
+    inset: 0;
     width: 100%;
-    height: auto;
+    height: 100%;
     display: block;
     border: 1px solid var(--tbm-grense);
     border-radius: 8px;
     touch-action: none;
   }
-  .tbm-canvas-bunn { position: relative; }
 
   .tbm-legg-ved-knapp { display: inline-flex; width: fit-content; }
 `;
@@ -149,6 +154,7 @@ export class TilbakemeldingWidget extends HTMLElement {
     this._tekstFelt = shadow.querySelector('.tbm-tekst');
     this._filInput = shadow.querySelector('.tbm-filinput');
     this._canvasWrap = shadow.querySelector('.tbm-canvaswrap');
+    this._canvasStack = shadow.querySelector('.tbm-canvasstack');
     this._bunnCanvas = shadow.querySelector('.tbm-canvas-bunn');
     this._strekCanvas = shadow.querySelector('.tbm-canvas-strek');
     this._statusEl = shadow.querySelector('.tbm-status');
@@ -167,7 +173,8 @@ export class TilbakemeldingWidget extends HTMLElement {
 
   /**
    * @param {{ db: object, hentBrukerInfo?: () => (object|null), samlingsnavn?: string,
-   *   typer?: string[], knappetekst?: string, posisjon?: 'hoyre'|'venstre' }} konfig
+   *   typer?: string[], knappetekst?: string, posisjon?: 'hoyre'|'venstre',
+   *   visFlytknapp?: boolean }} konfig
    */
   konfigurer(konfig) {
     if (!konfig || !konfig.db) throw new Error('tilbakemelding-widget: konfigurer() krever minst { db }.');
@@ -177,11 +184,17 @@ export class TilbakemeldingWidget extends HTMLElement {
       typer: TILBAKEMELDING_TYPER,
       knappetekst: '💬 Tilbakemelding',
       posisjon: 'hoyre',
+      visFlytknapp: true,
       ...konfig,
     };
     this._feedbackDB = lagFeedbackDB(konfig.db, this._konfig.samlingsnavn);
     this._flytknapp.textContent = this._konfig.knappetekst;
     this._flytknapp.classList.toggle('tbm-venstre', this._konfig.posisjon === 'venstre');
+    // Flytknappen er valgfri — en vertsapp kan i stedet kalle .apne() fra en egen knapp den
+    // allerede har (f.eks. i en innstillinger-side), og la modalen være eneste synlige del.
+    // Nyttig når appen har annet fastmontert UI (f.eks. en egen flytende CTA-knapp) som en
+    // ekstra flytende knapp ellers ville kollidert visuelt med.
+    this._flytknapp.hidden = !this._konfig.visFlytknapp;
     this._typeSelect.innerHTML = this._konfig.typer.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
   }
 
@@ -212,6 +225,7 @@ export class TilbakemeldingWidget extends HTMLElement {
       this._strekLag = [];
       this._harBilde = true;
       this._canvasWrap.hidden = false;
+      this._settCanvasstorrelse(canvas.width, canvas.height);
     } catch (err) {
       this._settStatus(err.message, true);
     } finally {
@@ -219,10 +233,24 @@ export class TilbakemeldingWidget extends HTMLElement {
     }
   }
 
+  // Setter en eksplisitt px-bredde/høyde på .tbm-canvasstack ut fra bildets faktiske
+  // proporsjoner, begrenset til maks 320×360px på skjermen. Nødvendig fordi begge canvasene
+  // ligger oppå hverandre med position:absolute (se stilkommentaren) — uten dette kollapser
+  // boksen til 0 høyde og skjuler seg selv bak resten av modalen i stedet for omvendt.
+  _settCanvasstorrelse(bredde, hoyde) {
+    const maksBredde = 320;
+    const maksHoyde = 360;
+    const skala = Math.min(maksBredde / bredde, maksHoyde / hoyde, 1);
+    this._canvasStack.style.width = Math.round(bredde * skala) + 'px';
+    this._canvasStack.style.height = Math.round(hoyde * skala) + 'px';
+  }
+
   _fjernBilde() {
     this._harBilde = false;
     this._strekLag = [];
     this._canvasWrap.hidden = true;
+    this._canvasStack.style.width = '';
+    this._canvasStack.style.height = '';
     this._bunnCanvas.getContext('2d').clearRect(0, 0, this._bunnCanvas.width, this._bunnCanvas.height);
     this._strekCanvas.getContext('2d').clearRect(0, 0, this._strekCanvas.width, this._strekCanvas.height);
   }

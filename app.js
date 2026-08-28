@@ -698,7 +698,10 @@ function startBrukerAbonnement() {
 
 // Monterer <tilbakemelding-widget> (feedback-modul/) én gang for godkjente brukere — se
 // feedback-modul/README.md for hvordan komponenten selv er bygget opp. Idempotent: trygt
-// å kalle på hver bruker-snapshot uten å montere flere knapper.
+// å kalle på hver bruker-snapshot uten å montere flere knapper. Komponentens egen flytende
+// knapp er skrudd av (visFlytknapp: false) — den kolliderte visuelt med appens egen flytende
+// «Legg til flaske»-CTA (samme hjørne). Inngangen er i stedet «Gi tilbakemelding»-knappen i
+// Innstillinger, som kaller tilbakemeldingWidget.apne() direkte (se visInnstillinger()).
 function monterTilbakemeldingWidget() {
   if (tilbakemeldingWidget) return;
   tilbakemeldingWidget = document.createElement('tilbakemelding-widget');
@@ -709,6 +712,7 @@ function monterTilbakemeldingWidget() {
   document.body.appendChild(tilbakemeldingWidget);
   tilbakemeldingWidget.konfigurer({
     db,
+    visFlytknapp: false,
     hentBrukerInfo: () => {
       const b = gjeldendeBruker();
       return b ? { uid: b.uid, navn: b.displayName || b.email || 'Ukjent', epost: b.email || '' } : null;
@@ -1789,6 +1793,14 @@ function visInnstillinger() {
       <h1>Innstillinger</h1>
 
       <section class="detaljseksjon">
+        <h2>💬 Tilbakemelding</h2>
+        <p class="hjelpetekst">Funnet en feil, eller har du et forslag? Send det til Sindre.</p>
+        <div class="knapperad">
+          <button class="knapp knapp-primaer" id="gi-tilbakemelding-knapp">Gi tilbakemelding</button>
+        </div>
+      </section>
+
+      <section class="detaljseksjon">
         <h2>👥 Kjeller: ${escapeHtml(aktivKjeller.navn)}</h2>
         <p class="hjelpetekst">${(aktivKjeller.medlemmer || []).length} medlem(mer). Del lenken og koden under for å invitere flere.</p>
 
@@ -1986,6 +1998,8 @@ function visInnstillinger() {
     alert(melding);
     if (totalAntall) location.hash = '#/viner';
   });
+
+  document.getElementById('gi-tilbakemelding-knapp').addEventListener('click', () => tilbakemeldingWidget?.apne());
 
   document.getElementById('logg-ut-knapp').addEventListener('click', () => loggUt());
 

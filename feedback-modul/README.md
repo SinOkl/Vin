@@ -54,6 +54,7 @@ sjekker ingen tilganger selv, de bare kaller Firestore, som håndhever reglene f
 | `typer` | nei | `['Forslag','Feil','Annet']` | Valgene i type-nedtrekket |
 | `knappetekst` | nei | `'💬 Tilbakemelding'` | Teksten på den flytende knappen |
 | `posisjon` | nei | `'hoyre'` | `'hoyre'` eller `'venstre'` — hvilket hjørne knappen flyter i |
+| `visFlytknapp` | nei | `true` | Sett til `false` for å skjule komponentens egen flytende knapp — nyttig om vertsappen allerede har annet fastmontert UI (egen flytende CTA-knapp, bunnmeny...) den ellers ville kollidert med. Kall `widget.apne()` fra din egen knapp i stedet (se Vinkjelleren sin Innstillinger-side for et eksempel). |
 
 Temaing: sett CSS-variabler på selve elementet (de krysser Shadow DOM-grensen med vilje):
 

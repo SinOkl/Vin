@@ -15,7 +15,8 @@
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import admin from 'firebase-admin';
+import { initializeApp, cert } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 
 const her = path.dirname(fileURLToPath(import.meta.url));
 const noekkelSti = path.join(her, 'service-account.json');
@@ -34,8 +35,8 @@ try {
   process.exit(1);
 }
 
-admin.initializeApp({ credential: admin.credential.cert(noekkel) });
-const db = admin.firestore();
+const app = initializeApp({ credential: cert(noekkel) });
+const db = getFirestore(app);
 
 const [, , kommandoRaw = 'list', ...resten] = process.argv;
 const kommando = kommandoRaw.startsWith('--') ? 'list' : kommandoRaw;

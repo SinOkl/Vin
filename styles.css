@@ -232,6 +232,7 @@ h2 {
 .statkort-verdi .stattall { color: var(--gull); }
 
 .stattall { font-family: var(--font-serif); font-size: 1.3rem; font-weight: 700; }
+.stattall-stor { font-size: 2.2rem; }
 .statlabel { font-size: 0.7rem; color: var(--tekst-lys); }
 
 section { margin-bottom: 22px; }
@@ -402,6 +403,12 @@ textarea { min-height: 70px; resize: vertical; }
 .fyllniva-rad input[type="range"] { flex: 1; accent-color: var(--bordo); }
 .fyllniva-tall { font-weight: 700; font-size: 0.9rem; min-width: 3.2em; text-align: right; }
 
+/* ---------- Kalkulator-slidere ---------- */
+
+.kalk-slider-rad { display: flex; align-items: center; gap: 10px; }
+.kalk-slider-rad input[type="range"] { flex: 1; accent-color: var(--bordo); }
+.kalk-slider-tall { font-weight: 700; font-size: 0.9rem; min-width: 3.5em; text-align: right; }
+
 .status-badge {
   display: inline-block;
   margin-top: 4px;
@@ -416,6 +423,7 @@ textarea { min-height: 70px; resize: vertical; }
 .status-venter { background: oklch(0.9 0.01 55); color: var(--tekst-lys); }
 .status-ukjent { background: var(--bg); color: var(--tekst-lys); }
 .status-drukket { background: oklch(0.9 0.06 75 / 0.4); color: var(--gull); }
+.status-ny { background: var(--gronn-bg); color: var(--gronn); }
 
 .vinkort.drukket { opacity: 0.72; }
 

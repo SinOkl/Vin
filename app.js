@@ -3,6 +3,7 @@ import { loggInnMedGoogle, loggUt, paInnloggingsendring, gjeldendeBruker } from 
 import { db } from './firebase-init.js';
 import './feedback-modul/tilbakemelding-widget.js';
 import './feedback-modul/tilbakemelding-admin.js';
+import { visKalkulator } from './kalkulator.js';
 
 // ---------- Konstanter ----------
 
@@ -567,6 +568,9 @@ function ruteIndre() {
   } else if (path === 'brennevin') {
     settAktivNav('#/brennevin');
     visVinliste('Brennevin');
+  } else if (path === 'kalkulator') {
+    settAktivNav('#/kalkulator');
+    visKalkulator();
   } else if (path === 'ny') {
     settAktivNav(param === 'brennevin' ? '#/brennevin' : '#/viner');
     visSkjema(null, param === 'brennevin' ? 'Brennevin' : 'Vin');

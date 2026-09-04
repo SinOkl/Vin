@@ -132,6 +132,17 @@ function kjoletidMarkup() {
   `;
 }
 
+function startKlokkeNedtelling(minutter, tekstPlass) {
+  const erAndroid = /Android/i.test(navigator.userAgent);
+  if (erAndroid) {
+    const sekunder = minutter * 60;
+    location.href = `intent:#Intent;action=android.intent.action.SET_TIMER;i.android.intent.extra.alarm.LENGTH=${sekunder};S.android.intent.extra.alarm.SKIP_UI=true;end`;
+    tekstPlass.textContent = '';
+  } else {
+    tekstPlass.textContent = `Automatisk oppstart av klokke-timer virker foreløpig bare i Chrome på Android — sett en ${formaterMinutter(minutter)}-nedtelling manuelt i klokke-appen din.`;
+  }
+}
+
 function kobleKjoletid() {
   const startSlider = document.getElementById('kjole-start-slider');
   const malSlider = document.getElementById('kjole-mal-slider');
@@ -164,17 +175,25 @@ function kobleKjoletid() {
       return;
     }
     const retning = Tmal < Tstart ? 'kjøletid' : Tmal > Tstart ? 'oppvarmingstid' : 'tid';
+    const midtMinutter = Math.max(1, Math.round((res.lav + res.hoy) / 2));
     resultatPlass.innerHTML = `
       <div class="statkort">
         <span class="stattall">${formaterMinutter(res.lav)}–${formaterMinutter(res.hoy)}</span>
         <span class="statlabel">estimert ${retning}</span>
       </div>
       <p class="hjelpetekst">Estimatet er mer usikkert tidlig i forløpet enn mot slutten — modellen antar jevn temperatur i hele væsken.</p>
+      <button type="button" class="knapp knapp-primaer" id="kjole-timer-knapp" data-minutter="${midtMinutter}">⏰ Start nedtelling på klokken (${formaterMinutter(midtMinutter)})</button>
+      <p class="hjelpetekst" id="kjole-timer-tekst"></p>
     `;
   }
 
   [startSlider, malSlider, miljoSelect, beholderSelect, kalibreringSlider].forEach((elm) => {
     elm.addEventListener('input', oppdater);
+  });
+  resultatPlass.addEventListener('click', (e) => {
+    const knapp = e.target.closest('#kjole-timer-knapp');
+    if (!knapp) return;
+    startKlokkeNedtelling(Number(knapp.dataset.minutter), document.getElementById('kjole-timer-tekst'));
   });
   oppdater();
 }

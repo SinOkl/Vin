@@ -136,8 +136,12 @@ function startKlokkeNedtelling(minutter, tekstPlass) {
   const erAndroid = /Android/i.test(navigator.userAgent);
   if (erAndroid) {
     const sekunder = minutter * 60;
-    location.href = `intent:#Intent;action=android.intent.action.SET_TIMER;i.android.intent.extra.alarm.LENGTH=${sekunder};S.android.intent.extra.alarm.SKIP_UI=true;end`;
-    tekstPlass.textContent = '';
+    const lenke = document.createElement('a');
+    lenke.href = `intent:#Intent;action=android.intent.action.SET_TIMER;i.android.intent.extra.alarm.LENGTH=${sekunder};S.android.intent.extra.alarm.SKIP_UI=true;end`;
+    document.body.appendChild(lenke);
+    lenke.click();
+    lenke.remove();
+    tekstPlass.textContent = `Fikk du ikke opp klokke-appen? Sett en ${formaterMinutter(minutter)}-nedtelling manuelt — noen telefoner/klokke-apper støtter ikke automatisk oppstart fra en installert app på hjemskjermen.`;
   } else {
     tekstPlass.textContent = `Automatisk oppstart av klokke-timer virker foreløpig bare i Chrome på Android — sett en ${formaterMinutter(minutter)}-nedtelling manuelt i klokke-appen din.`;
   }

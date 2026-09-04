@@ -4,6 +4,7 @@ import { db } from './firebase-init.js';
 import './feedback-modul/tilbakemelding-widget.js';
 import './feedback-modul/tilbakemelding-admin.js';
 import { visKalkulator } from './kalkulator.js';
+import { FaktaDB, POOL_STORRELSE } from './fakta-db.js';
 
 // ---------- Konstanter ----------
 
@@ -498,6 +499,7 @@ let ventendeSkannData = null; // { ean, bilde, viaRegistrerFlyt, harCacheTreff, 
 let brukerAvslutt = null; // avslutter abonnement på eget brukere/{uid}-dokument ved ut-/innlogging
 let sisteBrukerStatus = null; // forrige kjente status, for å unngå å restarte lastKjellereOgStart() på hver snapshot
 let ventendeAvslutt = null; // avslutter admins abonnement på ventende brukere ved utlogging
+let dagensFakta = null; // { nb, mf, visFullsyklusMelding } — hentet én gang per app-åpning, vist øverst på Oversikt
 let ventendeBrukere = []; // ventende brukere, kun populert/relevant for ADMIN_UID
 let tilbakemeldingWidget = null; // <tilbakemelding-widget>-elementet, montert kun for godkjente brukere
 const app = document.getElementById('app');
@@ -591,6 +593,9 @@ function ruteIndre() {
   } else if (path === 'tilbakemeldinger') {
     settAktivNav('#/innstillinger');
     visTilbakemeldinger();
+  } else if (path === 'fakta-brukere') {
+    settAktivNav('#/innstillinger');
+    visFaktaAdmin();
   } else if (path === 'registrer') {
     settAktivNav(param === 'brennevin' ? '#/brennevin' : '#/viner');
     visRegistrer(param === 'brennevin' ? 'Brennevin' : 'Vin');
@@ -663,6 +668,20 @@ function startVentendeAbonnement() {
   });
 }
 
+// Henter (og registrerer) dagens faktapar én gang per app-åpning — se fakta-db.js for
+// stokke-/syklus-logikken. Vises øverst på Oversikt (se visOversikt()), ikke som popup.
+// Kalles kun én gang per innlogging (samme vaktledd som lastKjellereOgStart()), men
+// selve svaret kommer asynkront — trigger derfor en ny rute() når det er klart, slik at
+// Oversikt (om det er der brukeren fortsatt står) får faktaene med uten en full reload.
+function hentDagensFakta() {
+  FaktaDB.registrerApning(bruker.uid)
+    .then((resultat) => {
+      dagensFakta = resultat;
+      if (!location.hash || location.hash === '#/') rute();
+    })
+    .catch((err) => console.error('[vinkjeller] Klarte ikke å hente dagens fakta:', err));
+}
+
 function oppdaterGodkjenningsBadge() {
   const lenke = document.querySelector('.navlink[href="#/innstillinger"]');
   if (!lenke) return;
@@ -692,6 +711,7 @@ function startBrukerAbonnement() {
       if (sisteBrukerStatus !== 'godkjent') {
         sisteBrukerStatus = 'godkjent';
         lastKjellereOgStart().catch(visOppstartsfeil);
+        hentDagensFakta(); // fyrer uavhengig av kjeller-lasting, feil her skal aldri blokkere appen
       }
     } else {
       sisteBrukerStatus = brukerDok.status;
@@ -759,6 +779,7 @@ paInnloggingsendring((innloggetBruker) => {
   if (ventendeAvslutt) { ventendeAvslutt(); ventendeAvslutt = null; }
   sisteBrukerStatus = null;
   ventendeBrukere = [];
+  dagensFakta = null;
 
   if (!bruker) {
     visBunnav(false);
@@ -905,6 +926,19 @@ function visOversikt() {
       </div>
       ${unikeProdukter ? `<p class="hjelpetekst">${vinIKjelleren.length} vin(er) · ${brennevinIKjelleren.length} brennevin · ${(aktivKjeller.medlemmer || []).length} medlem(mer)</p>` : `<p class="hjelpetekst">${(aktivKjeller.medlemmer || []).length} medlem(mer) i denne kjelleren</p>`}
       ${flaskerTotalt ? `<div class="fordelingsbar"><div class="fordelingsbar-vin" style="width:${andelVin}%"></div><div class="fordelingsbar-brennevin" style="width:${100 - andelVin}%"></div></div>` : ''}
+
+      ${dagensFakta ? `
+        <div class="fakta-boks">
+          ${dagensFakta.visFullsyklusMelding ? `<p class="fakta-fullsyklus">🎉 Du har nå sett alle faktaene i begge kategorier igjen — stokket på nytt!</p>` : ''}
+          <div class="fakta-rad">
+            <span class="fakta-merke fakta-merke-nb">Nybegynnerfakta</span>
+            <p class="fakta-tekst">${escapeHtml(dagensFakta.nb.text)}</p>
+          </div>
+          <div class="fakta-rad">
+            <span class="fakta-merke fakta-merke-mf">Morofakta</span>
+            <p class="fakta-tekst">${escapeHtml(dagensFakta.mf.text)}</p>
+          </div>
+        </div>` : ''}
 
       ${aktivitet.length ? `
         <section>
@@ -1873,6 +1907,14 @@ function visInnstillinger() {
         <div class="knapperad">
           <a class="knapp knapp-primaer" href="#/tilbakemeldinger">Se tilbakemeldinger</a>
         </div>
+      </section>
+
+      <section class="detaljseksjon">
+        <h2>🎲 Fakta-bruk</h2>
+        <p class="hjelpetekst">Se hvilke brukere som nærmer seg eller har passert en full syklus av fun facts-poolen.</p>
+        <div class="knapperad">
+          <a class="knapp knapp-primaer" href="#/fakta-brukere">Se fakta-bruk</a>
+        </div>
       </section>` : ''}
 
       <section class="detaljseksjon">
@@ -2079,6 +2121,75 @@ function visTilbakemeldinger() {
   adminListe.style.setProperty('--tbm-radius', 'var(--radius)');
   document.getElementById('tilbakemelding-admin-plass').appendChild(adminListe);
   adminListe.konfigurer({ db });
+}
+
+// ---------- Visning: Fakta-bruk (kun ADMIN_UID) ----------
+// Flagger "storforbrukere" — brukere der totalOpens nærmer seg eller har passert
+// cycleCount * POOL_STORRELSE, altså om lag en full syklus med app-åpninger siden
+// forrige gang faktapoolen ble stokket. Rent computed ut fra felter som allerede
+// lagres i faktafremdrift/{uid} (se fakta-db.js) — ingen egen lagring for dette.
+
+const FAKTA_ADVARSEL_MARGIN = 5; // "nærmer seg" = innenfor så mange åpninger av terskelen
+
+function visFaktaAdmin() {
+  if (bruker.uid !== ADMIN_UID) { location.hash = '#/'; return; }
+  app.innerHTML = '';
+  app.appendChild(el(`
+    <div class="side">
+      <h1>Fakta-bruk</h1>
+      <p class="hjelpetekst">Laster…</p>
+    </div>
+  `));
+
+  Promise.all([FaktaDB.hentAlleBrukerdata(), BrukerDB.hentAlle()])
+    .then(([faktaData, alleBrukere]) => {
+      if (!location.hash.startsWith('#/fakta-brukere')) return; // rakk å navigere bort før dataen kom
+      const navnPerUid = new Map(alleBrukere.map((b) => [b.id, b]));
+
+      const flagget = faktaData
+        .map((f) => {
+          const terskel = (f.cycleCount || 0) * POOL_STORRELSE;
+          const differanse = (f.totalOpens || 0) - terskel;
+          return { ...f, terskel, differanse };
+        })
+        .filter((f) => f.differanse >= -FAKTA_ADVARSEL_MARGIN)
+        .sort((a, b) => b.differanse - a.differanse);
+
+      app.innerHTML = '';
+      app.appendChild(el(`
+        <div class="side">
+          <h1>Fakta-bruk</h1>
+          <p class="hjelpetekst">Brukere som nærmer seg (innen ${FAKTA_ADVARSEL_MARGIN} åpninger) eller har passert en full syklus av faktapoolen.</p>
+          ${!flagget.length
+            ? '<p class="tom">Ingen storforbrukere akkurat nå.</p>'
+            : `<ul class="kompaktliste">${flagget.map((f) => {
+                const info = navnPerUid.get(f.uid);
+                const status = f.differanse >= 0
+                  ? `${f.differanse} over terskel`
+                  : `${-f.differanse} igjen til terskel`;
+                return `
+                  <li>
+                    <div style="padding:10px 4px;">
+                      <strong>${escapeHtml(info?.navn || info?.epost || f.uid)}</strong><br>
+                      <span class="hjelpetekst">Syklus ${f.cycleCount || 0} · ${f.totalOpens || 0} åpninger totalt · ${status}</span>
+                    </div>
+                  </li>`;
+              }).join('')}</ul>`}
+          <div class="knapperad" style="margin-top:14px;"><a class="knapp" href="#/innstillinger">Tilbake</a></div>
+        </div>
+      `));
+    })
+    .catch((err) => {
+      console.error('[vinkjeller] Klarte ikke å laste fakta-bruk:', err);
+      app.innerHTML = '';
+      app.appendChild(el(`
+        <div class="side">
+          <h1>Fakta-bruk</h1>
+          <p class="tom">${escapeHtml(err.message || String(err))}</p>
+          <div class="knapperad" style="margin-top:14px;"><a class="knapp" href="#/innstillinger">Tilbake</a></div>
+        </div>
+      `));
+    });
 }
 
 // ---------- Init ----------

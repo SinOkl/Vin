@@ -628,3 +628,43 @@ textarea { min-height: 70px; resize: vertical; }
 .knapp-fare { background: var(--rod-bg); color: var(--rod); border-color: #f3b9b3; }
 .knapp-gull { background: oklch(0.9 0.06 75 / 0.4); color: var(--gull); border-color: oklch(0.55 0.11 75 / 0.5); }
 .knapp:disabled { opacity: 0.55; cursor: default; }
+
+/* ---------- Dagens fakta (Oversikt, under flaskeantallet) ---------- */
+
+.fakta-boks {
+  background: var(--kort-bg);
+  border: 1px solid var(--grense);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fakta-fullsyklus {
+  margin: 0;
+  background: var(--gronn-bg);
+  color: var(--gronn);
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.fakta-rad { display: flex; flex-direction: column; gap: 6px; }
+
+.fakta-merke {
+  align-self: flex-start;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.fakta-merke-nb { background: var(--gul-bg); color: var(--gul); }
+.fakta-merke-mf { background: rgba(122, 31, 61, 0.12); color: var(--bordo); }
+
+.fakta-tekst { margin: 0; color: var(--tekst); line-height: 1.45; font-size: 0.95rem; }

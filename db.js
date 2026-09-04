@@ -215,6 +215,14 @@ export const BrukerDB = {
     });
   },
 
+  // Henter alle brukere én gang (ikke sanntid) — kun ADMIN_UID har leserettighet
+  // på hele samlingen (se firestore.rules). Brukes til å slå opp navn/e-post for
+  // uid-er fra andre admin-flater, f.eks. fakta-bruk-siden i app.js.
+  async hentAlle() {
+    const snap = await getDocs(collection(db, 'brukere'));
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  },
+
   // Kun ADMIN_UID har leserettighet på denne spørringen (se firestore.rules).
   abonnerVentende(callback) {
     const q = query(collection(db, 'brukere'), where('status', '==', 'ventende'));

@@ -369,6 +369,50 @@ produkter/{ean}                     { kategori, navn, produsent, argang, type, l
       tilbakemeldinger (inkl. skjermbilder) rett i samtalen og jobbe med dem sammen, i
       stedet for å måtte lese dem i appen eller Firebase Console først.
 
+33. **Dagens fakta på Oversikt**: én gang per app-åpning (idet en godkjent bruker akkurat er
+    logget inn og går videre til appen, i `startBrukerAbonnement()` i `app.js`) hentes og
+    registreres et faktapar — ett **nybegynnerfakta** og ett **morofakta** for entusiaster —
+    og vises øverst på Oversikt-siden, rett under flaskeantallet/fordelingsbaren
+    (`.fakta-boks` i `visOversikt()`), ikke som en popup. Datalaget:
+    - `fakta.json`: statisk, bunt-lastet pool på 50 nybegynner- (`nb`-id-prefiks) + 50
+      moro-fakta (`mf`-id-prefiks), allerede skrevet og faktasjekket på norsk bokmål —
+      ingen `level`-felt, tier avledes av id-prefikset.
+    - `fakta-db.js`: henter poolen (`fetch('./fakta.json')`, cachet i modulen) og fører
+      per-bruker fremdrift i en ny samling `faktafremdrift/{uid}` — stokket rekkefølge for
+      hver pool (`nbShuffledFactIds`/`mfShuffledFactIds`), delt `currentIndex`/`cycleCount`
+      (trygt fordi begge poolene alltid er like store, se `POOL_STORRELSE`), `totalOpens`,
+      `lastOpenedAt`. Ved fullført syklus (index når 50) stokkes begge poolene på nytt og
+      `cycleCount` økes; en «du har sett alle fakta igjen»-melding vises kun fra og med
+      andre fullførte syklus (ikke ved aller første). `FaktaDB.registrerApning(uid)` gjør
+      alt dette og returnerer et ferdig faktapar — ingen egen UI-modul (`fakta.js` ble
+      vurdert, men droppet: visningen er nå bare et par ekstra linjer inni `visOversikt()`,
+      ikke stor nok til å rettferdiggjøre en egen fil).
+    - Resultatet caches i en ny modul-variabel (`dagensFakta` i `app.js`), satt via
+      `hentDagensFakta()` (kalt fra `startBrukerAbonnement()`, samme vaktledd som
+      `lastKjellereOgStart()` — kun én gang per innlogging). Siden Firestore-kallet er
+      asynkront og kan komme etter at Oversikt allerede er tegnet, trigges et nytt `rute()`
+      når svaret er klart (kun dersom brukeren fortsatt står på Oversikt). `dagensFakta`
+      nullstilles ved utlogging (samme opprydding som `sisteBrukerStatus`/`ventendeBrukere`)
+      slik at neste bruker på samme enhet ikke ser forrige brukers fakta før eget kall er
+      hentet. Feil her (f.eks. `fakta.json` som ikke laster) logges bare til konsoll —
+      fakta er en bonus, ikke kritisk, og blokkerer aldri resten av appen.
+    - Ny **admin-side** `#/fakta-brukere` (lenket fra et nytt «🎲 Fakta-bruk»-avsnitt i
+      Innstillinger, samme admin-vaktmønster som Godkjenninger/Tilbakemeldinger): flagger
+      «storforbrukere» der `totalOpens` nærmer seg (innen 5) eller har passert
+      `cycleCount * 50` — rent computed ut fra felter som allerede lagres, ingen egen
+      lagring for flagget. Bruker en ny `BrukerDB.hentAlle()` (db.js) til å slå opp
+      navn/e-post for uid-ene.
+    - `firestore.rules` har fått en ny `match /faktafremdrift/{uid}`-blokk (samme mønster
+      som `brukere/{uid}`: kun eier selv kan opprette/endre sitt eget dokument, kun admin
+      kan liste hele samlingen) — **må limes inn manuelt i Firebase Console** før dette
+      faktisk kan lagre fremdrift. `sw.js` (`CACHE_NAVN` bumpet) og versjonsmerket i
+      `index.html` er oppdatert til å inkludere de nye filene.
+    - Verifisert lokalt uten Firebase-sesjon (`.fakta-boks`-CSS-en sett i nettleseren med
+      simulert data, ser riktig ut på mobilbredde — bordo/serif-tokens, badge-farger, ikke
+      overflow). **Ikke testet med ekte innlogging/skriving til `faktafremdrift/` ennå** —
+      neste steg er å bekrefte at fakta-boksen faktisk dukker opp på Oversikt ved ekte
+      app-åpning og at fremdriften lagres riktig i Firestore.
+
 ## Kjente fallgruver (lært på den harde måten — ikke gjenta)
 
 - **`<input type="file" capture="...">` hopper forbi filvelgeren og går rett til kameraet**

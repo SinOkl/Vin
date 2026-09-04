@@ -132,5 +132,17 @@ service cloud.firestore {
       allow update: if innlogget() && request.auth.uid == adminUid();
       allow delete: if innlogget() && request.auth.uid == adminUid();
     }
+
+    // Fun fact-popupen (fakta.js/fakta-db.js): fremdrift (stokket rekkefølge, hvor
+    // langt man har kommet, antall åpninger) per bruker. Kun eieren selv kan lese/
+    // opprette/endre sitt eget dokument. Admin kan i tillegg liste hele samlingen
+    // for å flagge storforbrukere (se "Fakta-bruk"-siden i Innstillinger) — ingen
+    // andre enn admin kan bla gjennom andres fremdrift.
+    match /faktafremdrift/{uid} {
+      allow get: if innlogget() && (request.auth.uid == uid || request.auth.uid == adminUid());
+      allow list: if innlogget() && request.auth.uid == adminUid();
+      allow create, update: if innlogget() && request.auth.uid == uid;
+      allow delete: if false;
+    }
   }
 }

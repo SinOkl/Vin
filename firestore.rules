@@ -133,7 +133,7 @@ service cloud.firestore {
       allow delete: if innlogget() && request.auth.uid == adminUid();
     }
 
-    // Fun fact-popupen (fakta.js/fakta-db.js): fremdrift (stokket rekkefølge, hvor
+    // "Dagens fakta" på Oversikt (fakta-db.js): fremdrift (stokket rekkefølge, hvor
     // langt man har kommet, antall åpninger) per bruker. Kun eieren selv kan lese/
     // opprette/endre sitt eget dokument. Admin kan i tillegg liste hele samlingen
     // for å flagge storforbrukere (se "Fakta-bruk"-siden i Innstillinger) — ingen

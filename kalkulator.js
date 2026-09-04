@@ -16,6 +16,9 @@ const KJOLE_BEHOLDERE = {
   'Magnum 1,5l': { r: 0.0475, vegg: 0.004, k: 1.0 },
   '1,5L brusflaske': { r: 0.045, vegg: 0.0003, k: 0.2 },
   '0,5L brusflaske': { r: 0.0325, vegg: 0.00025, k: 0.2 },
+  'Ølflaske 0,33L': { r: 0.030, vegg: 0.0025, k: 1.0 },
+  'Ølboks 0,33L': { r: 0.033, vegg: 0.0001, k: 200 },
+  'Ølboks 0,5L': { r: 0.033, vegg: 0.0001, k: 200 },
 };
 
 const RHO_C = 4.18e6; // J/(m³K), vann/vin/brus

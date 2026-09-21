@@ -121,12 +121,23 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Skjermbilde-vedlegget vises av admin-siden som <img src="…">, så det må være en ren
+    // base64-JPEG-data-URL (det widgeten lager) — ellers kan det brukes til å smugle inn HTML/
+    // script som kjører i admins økt. Maks ca. 900 000 tegn (Firestore-dokumentgrensen er 1 MiB).
+    function gyldigTilbakemeldingBilde(data) {
+      return !('bilde' in data) || data.bilde == null ||
+        (data.bilde is string
+          && data.bilde.size() < 900000
+          && data.bilde.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$'));
+    }
+
     // Tilbakemeldingsmodulen (feedback-modul/, se firestore-rules-tillegg.txt der for den
     // gjenbrukbare originalversjonen av denne blokken). Enhver godkjent bruker kan sende inn
     // (kun opprette, ikke lese andres), kun admin kan se/liste/endre status/slette.
     match /tilbakemeldinger/{id} {
       allow create: if innlogget() && erGodkjent()
         && request.resource.data.status == 'ny'
+        && gyldigTilbakemeldingBilde(request.resource.data)
         && (request.resource.data.bruker == null || request.resource.data.bruker.uid == request.auth.uid);
       allow get, list: if innlogget() && request.auth.uid == adminUid();
       allow update: if innlogget() && request.auth.uid == adminUid();

@@ -59,7 +59,7 @@ export const KjellerDB = {
     const b = brukerInfo();
     const q = query(collection(db, 'kjellere'), where('medlemmer', 'array-contains', b.uid));
     const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return snap.docs.map((d) => ({ ...d.data(), id: d.id }));
   },
 
   async bliMedViaKode(kode) {
@@ -77,7 +77,7 @@ export const KjellerDB = {
     }
     const kjellerSnap = await getDoc(kjellerRef);
     if (!kjellerSnap.exists()) throw new Error('Fant ikke kjelleren etter å ha blitt med.');
-    return { id: kjellerId, ...kjellerSnap.data() };
+    return { ...kjellerSnap.data(), id: kjellerId };
   },
 
   async nyInviteKode(kjellerId, gammelKode) {
@@ -109,7 +109,8 @@ export const VinDB = {
   // Abonnerer på sanntidsoppdateringer. Returnerer en funksjon som avslutter abonnementet.
   abonner(kjellerId, callback) {
     return onSnapshot(vinerCollection(kjellerId), (snap) => {
-      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      // id sist, så et (manipulert) "id"-felt i selve dokumentet aldri kan overstyre dokument-ID-en.
+      callback(snap.docs.map((d) => ({ ...d.data(), id: d.id })));
     }, (feil) => {
       console.error('Firestore-abonnement feilet:', feil);
     });
@@ -117,7 +118,7 @@ export const VinDB = {
 
   async hent(kjellerId, vinId) {
     const snap = await getDoc(doc(db, 'kjellere', kjellerId, 'viner', vinId));
-    return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+    return snap.exists() ? { ...snap.data(), id: snap.id } : null;
   },
 
   async lagre(kjellerId, vin) {
@@ -142,20 +143,34 @@ export const VinDB = {
     await deleteDoc(doc(db, 'kjellere', kjellerId, 'viner', vinId));
   },
 
-  // Batcher i grupper på 400 (Firestore-grensen er 500 operasjoner per batch).
+  // Batcher i grupper på maks 400 poster (Firestore-grensen er 500 operasjoner per batch) og
+  // ca. 8 MB (grensen per commit er 10 MB — base64-bilder i en full sikkerhetskopi kan sprenge den).
+  // Poster med `id` (gjenoppretting fra sikkerhetskopi) skrives til det dokumentet og overskriver det,
+  // og beholder opprinnelig lagtTilAv; uten `id` opprettes et nytt dokument (AI-import).
   async importer(kjellerId, viner) {
     const info = brukerInfo();
     const kolleksjon = vinerCollection(kjellerId);
     let antall = 0;
-    for (let i = 0; i < viner.length; i += 400) {
-      const batch = writeBatch(db);
-      for (const vin of viner.slice(i, i + 400)) {
-        const { id, ...data } = vin;
-        batch.set(doc(kolleksjon), { ...data, lagtTilAv: info });
-        antall++;
-      }
+    let batch = writeBatch(db);
+    let iBatch = 0;
+    let bytes = 0;
+    const commitBatch = async () => {
+      if (!iBatch) return;
       await batch.commit();
+      batch = writeBatch(db);
+      iBatch = 0;
+      bytes = 0;
+    };
+    for (const vin of viner) {
+      const { id, ...data } = vin;
+      const storrelse = 2000 + (typeof data.bilde === 'string' ? data.bilde.length : 0);
+      if (iBatch >= 400 || (iBatch && bytes + storrelse > 8000000)) await commitBatch();
+      batch.set(id ? doc(kolleksjon, id) : doc(kolleksjon), { ...data, lagtTilAv: data.lagtTilAv || info });
+      iBatch++;
+      bytes += storrelse;
+      antall++;
     }
+    await commitBatch();
     return antall;
   },
 
@@ -209,7 +224,7 @@ export const BrukerDB = {
   // (ennå) finnes — skjer kun i det korte vinduet før sikreEget() har fullført.
   abonnerEget(uid, callback) {
     return onSnapshot(doc(db, 'brukere', uid), (snap) => {
-      callback(snap.exists() ? { id: snap.id, ...snap.data() } : null);
+      callback(snap.exists() ? { ...snap.data(), id: snap.id } : null);
     }, (feil) => {
       console.error('Firestore-abonnement (eget brukerdokument) feilet:', feil);
     });
@@ -220,14 +235,14 @@ export const BrukerDB = {
   // uid-er fra andre admin-flater, f.eks. fakta-bruk-siden i app.js.
   async hentAlle() {
     const snap = await getDocs(collection(db, 'brukere'));
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return snap.docs.map((d) => ({ ...d.data(), id: d.id }));
   },
 
   // Kun ADMIN_UID har leserettighet på denne spørringen (se firestore.rules).
   abonnerVentende(callback) {
     const q = query(collection(db, 'brukere'), where('status', '==', 'ventende'));
     return onSnapshot(q, (snap) => {
-      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      callback(snap.docs.map((d) => ({ ...d.data(), id: d.id })));
     }, (feil) => {
       console.error('Firestore-abonnement (ventende brukere) feilet:', feil);
     });

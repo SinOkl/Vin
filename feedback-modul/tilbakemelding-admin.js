@@ -15,6 +15,13 @@ function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// Skjermbildet kommer fra databasen og kan være skrevet av hvem som helst med skrivetilgang,
+// så det slippes kun inn i src="…" når det er en ren base64-data-URL.
+const GYLDIG_BILDE = /^data:image\/(?:jpeg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/;
+function gyldigBilde(s) {
+  return typeof s === 'string' && GYLDIG_BILDE.test(s) ? s : '';
+}
+
 const MARKUP = `
   <div class="tbm-adminfilter"></div>
   <div class="tbm-adminliste"></div>
@@ -130,7 +137,7 @@ export class TilbakemeldingAdmin extends HTMLElement {
           <span class="tbm-meta">${escapeHtml(bruker)} · ${escapeHtml(dato)}${f.side ? ' · ' + escapeHtml(f.side) : ''}</span>
         </div>
         <p class="tbm-adminrad-tekst">${escapeHtml(f.tekst)}</p>
-        ${f.bilde ? `<img class="tbm-miniatyr" src="${f.bilde}" alt="Vedlagt skjermbilde">` : ''}
+        ${gyldigBilde(f.bilde) ? `<img class="tbm-miniatyr" src="${gyldigBilde(f.bilde)}" alt="Vedlagt skjermbilde">` : ''}
         <div class="tbm-adminrad-bunn">
           <label class="tbm-statusvelger">Status
             <select data-status-id="${escapeHtml(f.id)}">

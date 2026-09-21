@@ -41,7 +41,7 @@ export function lagFeedbackDB(db, samlingsnavn = 'tilbakemeldinger') {
     abonner(callback) {
       const q = query(kolleksjon, orderBy('opprettet', 'desc'));
       return onSnapshot(q, (snap) => {
-        callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        callback(snap.docs.map((d) => ({ ...d.data(), id: d.id })));
       }, (feil) => console.error('[tilbakemelding] abonnement feilet:', feil));
     },
 

@@ -366,6 +366,13 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// Bilder ligger som base64-data-URL i Firestore. Verdien kan være skrevet av andre enn appen,
+// så den slippes kun inn i src="…" når den er en ren base64-data-URL (ingen anførselstegn el.l.).
+const GYLDIG_BILDE = /^data:image\/(?:jpeg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/;
+function gyldigBilde(s) {
+  return typeof s === 'string' && GYLDIG_BILDE.test(s) ? s : '';
+}
+
 function tallEllerTom(v) {
   if (v === undefined || v === null || v === '') return '';
   const n = Number(v);
@@ -441,7 +448,53 @@ function normaliserImportertVin(raw) {
   };
 }
 
+// ---------- Sikkerhetskopi: eksportformat og gjenoppretting ----------
+// Eksporten er en ren dump av alleViner (alle felt, inkl. id, bilde, drukketDato, drukketAv,
+// fyllniva og AI-feltene). Gjenoppretting går via normaliserBackupVin i stedet for AI-importen
+// over, slik at ingenting går tapt, og skriver til samme dokument-ID — å gjenopprette i en
+// kjeller som allerede har postene overskriver dem i stedet for å lage duplikater.
+
+const BACKUP_FORMAT = 'vinkjelleren-backup';
+
+function idTilBackup(id) {
+  return typeof id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(id) ? id : '';
+}
+
+function brukerRefEllerNull(b) {
+  return b && typeof b === 'object' && typeof b.uid === 'string' && b.uid
+    ? { uid: b.uid, navn: tekstEllerTom(b.navn) }
+    : null;
+}
+
+// Eldre eksporter er en ren liste av dokumenter. Disse kjennes igjen på at de har dokument-ID
+// og lagtTilAv, som AI-JSON aldri har (AI-malen tillater ikke ekstra feltnavn).
+function erBackupPost(raw) {
+  return !!raw && typeof raw === 'object' && !!idTilBackup(raw.id) && !!raw.lagtTilAv && typeof raw.lagtTilAv === 'object';
+}
+
+function normaliserBackupVin(raw) {
+  const vin = normaliserImportertVin(raw);
+  if (!vin) return null;
+
+  const antall = tallEllerTom(raw.antallFlasker);
+  vin.antallFlasker = antall === '' ? 1 : Math.max(0, antall); // 0 = drukket, skal ikke bli 1
+  vin.bilde = gyldigBilde(raw.bilde);
+  vin.drukketDato = tekstEllerTom(raw.drukketDato);
+  vin.drukketAv = vin.drukketDato ? brukerRefEllerNull(raw.drukketAv) : null;
+  vin.lagtTilAv = brukerRefEllerNull(raw.lagtTilAv);
+  const fyll = tallEllerTom(raw.fyllniva);
+  vin.fyllniva = fyll === '' ? '' : Math.min(100, Math.max(0, fyll));
+  vin.aiToppAr = tallEllerTom(raw.aiToppAr);
+  vin.aiBegrunnelse = tekstEllerTom(raw.aiBegrunnelse);
+  vin.aiKonfidens = tekstEllerTom(raw.aiKonfidens);
+  vin.drikkeklarKilde = raw.drikkeklarKilde === 'ai' ? 'ai' : '';
+  const id = idTilBackup(raw.id);
+  if (id) vin.id = id;
+  return vin;
+}
+
 // Tar imot rå JSON-tekst (ett objekt eller en liste), validerer og lagrer gyldige poster i aktiv kjeller.
+// Kjenner igjen egne sikkerhetskopier (se over) og gjenoppretter dem fullt ut etter en bekreftelse.
 async function importerFraJsonTekst(tekst) {
   let data;
   try {
@@ -449,20 +502,29 @@ async function importerFraJsonTekst(tekst) {
   } catch {
     throw new Error('Dette er ikke gyldig JSON. Sjekk at du limte inn hele svaret fra AI-en, uten ekstra tekst rundt.');
   }
-  if (!Array.isArray(data)) data = [data];
+  const erBackupFil = !!data && !Array.isArray(data) && data.format === BACKUP_FORMAT && Array.isArray(data.viner);
+  if (erBackupFil) data = data.viner;
+  else if (!Array.isArray(data)) data = [data];
 
   const gyldige = [];
   let hoppetOver = 0;
+  let gjenopprettet = 0;
   for (const raw of data) {
-    const v = normaliserImportertVin(raw);
-    if (v) gyldige.push(v);
-    else hoppetOver++;
+    const erBackup = erBackupFil || erBackupPost(raw);
+    const v = erBackup ? normaliserBackupVin(raw) : normaliserImportertVin(raw);
+    if (v) {
+      gyldige.push(v);
+      if (erBackup) gjenopprettet++;
+    } else hoppetOver++;
   }
   if (!gyldige.length) {
     throw new Error('Fant ingen gyldige poster i JSON-en (mangler "navn"-felt?).');
   }
+  if (gjenopprettet && !confirm(`Dette er en sikkerhetskopi med ${gjenopprettet} post(er). Poster som allerede finnes i kjelleren (samme ID) overskrives med innholdet i filen, og resten legges til. Gjenopprette?`)) {
+    return { antall: 0, hoppetOver: 0, gjenopprettet: 0, avbrutt: true };
+  }
   const antall = await VinDB.importer(aktivKjeller.id, gyldige);
-  return { antall, hoppetOver };
+  return { antall, hoppetOver, gjenopprettet, avbrutt: false };
 }
 
 // Brukt av Innstillinger sin backup-gjenoppretting: importerer flere JSON-filer (hver kan
@@ -471,20 +533,30 @@ async function importerFraJsonTekst(tekst) {
 async function importerFraFilerListe(filer) {
   let totalAntall = 0;
   let totalHoppetOver = 0;
+  let totalGjenopprettet = 0;
+  let antallAvbrutt = 0;
   const feilFiler = [];
 
   for (const file of filer) {
     try {
       const tekst = await file.text();
-      const { antall, hoppetOver } = await importerFraJsonTekst(tekst);
+      const { antall, hoppetOver, gjenopprettet, avbrutt } = await importerFraJsonTekst(tekst);
       totalAntall += antall;
       totalHoppetOver += hoppetOver;
+      totalGjenopprettet += gjenopprettet;
+      if (avbrutt) antallAvbrutt++;
     } catch (err) {
       feilFiler.push(`${file.name}: ${err.message}`);
     }
   }
 
-  return { totalAntall, totalHoppetOver, feilFiler };
+  return { totalAntall, totalHoppetOver, totalGjenopprettet, antallAvbrutt, feilFiler };
+}
+
+// Lokal dato som yyyy-mm-dd. toISOString() gir UTC, som er gårsdagens dato mellom 00 og 02 norsk tid.
+function lokalDatoIso(d = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
 // ---------- App-state ----------
@@ -980,11 +1052,11 @@ function visOversikt() {
 
 function listeKompakt(viner) {
   return `<ul class="kompaktliste">${viner.map((v) => `
-    <li><a href="#/vin/${v.id}">
+    <li><a href="#/vin/${escapeHtml(v.id)}">
       <span class="kl-ikon">${flaskeIkonSvg(v.kategori, v.type)}</span>
       <span class="kl-tekst">
         <span class="kl-navn">${escapeHtml(v.navn)}${v.argang ? ' ' + escapeHtml(v.argang) : ''}</span>
-        <span class="kl-info">${escapeHtml(v.type || '')} · ${v.antallFlasker || 0} stk</span>
+        <span class="kl-info">${escapeHtml(v.type || '')} · ${Number(v.antallFlasker) || 0} stk</span>
       </span>
     </a></li>
   `).join('')}</ul>`;
@@ -1087,13 +1159,14 @@ function vinkortHtml(v) {
     : `<span class="status-badge ${status.klasse}">${status.label}</span>`;
   const fyllniva = hentFyllniva(v);
   const visFyllniva = v.kategori === 'Brennevin' && !v.drukketDato && fyllniva < 100;
+  const bilde = gyldigBilde(v.bilde);
   return `
-    <a class="vinkort ${v.drukketDato ? 'drukket' : ''}" href="#/vin/${v.id}">
-      <div class="vinkort-bilde">${v.bilde ? `<img src="${v.bilde}" alt="">` : flaskeIkonSvg(v.kategori, v.type)}</div>
+    <a class="vinkort ${v.drukketDato ? 'drukket' : ''}" href="#/vin/${escapeHtml(v.id)}">
+      <div class="vinkort-bilde">${bilde ? `<img src="${bilde}" alt="">` : flaskeIkonSvg(v.kategori, v.type)}</div>
       <div class="vinkort-info">
         <div class="vinkort-navn">${escapeHtml(v.navn)}${v.argang ? ` <span class="argang">${escapeHtml(v.argang)}</span>` : ''}</div>
         <div class="vinkort-detalj">${escapeHtml(v.produsent || '')}${v.type ? ' · ' + escapeHtml(v.type) : ''}</div>
-        <div class="vinkort-detalj">${v.antallFlasker || 0} flaske(r)${v.land ? ' · ' + escapeHtml(v.land) : ''}</div>
+        <div class="vinkort-detalj">${Number(v.antallFlasker) || 0} flaske(r)${v.land ? ' · ' + escapeHtml(v.land) : ''}</div>
         ${visFyllniva ? `<div class="fyllniva-bar-liten" title="${fyllniva}% igjen"><div class="fyllniva-bar-indre" style="width:${fyllniva}%"></div></div>` : ''}
         ${badge}
       </div>
@@ -1114,7 +1187,7 @@ function visDetalj(id) {
   const fyllnivaForVerdi = hentFyllniva(v);
   const verdiForklaring = erBrennevin && fyllnivaForVerdi < 100 && (Number(v.antallFlasker) || 0) > 0
     ? `${(Number(v.antallFlasker) || 0) > 1 ? `${Number(v.antallFlasker) - 1} hel(e) á ${formatKr(v.innkjopspris)} + ` : ''}${fyllnivaForVerdi}% av 1 á ${formatKr(v.innkjopspris)}`
-    : `${v.antallFlasker} × ${formatKr(v.innkjopspris)}`;
+    : `${Number(v.antallFlasker) || 0} × ${formatKr(v.innkjopspris)}`;
   const tilbakeHref = erBrennevin ? '#/brennevin' : '#/viner';
   const ikon = erBrennevin ? '🥃' : '🍷';
 
@@ -1122,7 +1195,7 @@ function visDetalj(id) {
   app.appendChild(el(`
     <div class="side">
       <a href="${tilbakeHref}" class="tilbake">← Tilbake til ${erBrennevin ? 'brennevin' : 'viner'}</a>
-      ${v.bilde ? `<img class="detaljbilde" src="${v.bilde}" alt="">` : `<div class="detaljbilde detaljbilde-plassholder">${plassholderSvg(kategori, v.type)}</div>`}
+      ${gyldigBilde(v.bilde) ? `<img class="detaljbilde" src="${gyldigBilde(v.bilde)}" alt="">` : `<div class="detaljbilde detaljbilde-plassholder">${plassholderSvg(kategori, v.type)}</div>`}
       <h1>${ikon} ${escapeHtml(v.navn)}${v.argang ? ` <span class="argang">${escapeHtml(v.argang)}</span>` : ''}</h1>
       ${v.drukketDato
         ? `<span class="status-badge status-drukket">🍾 Drukket ${escapeHtml(v.drukketDato)}${v.drukketAv ? ' av ' + escapeHtml(v.drukketAv.navn) : ''}</span>`
@@ -1201,7 +1274,7 @@ function visDetalj(id) {
       </section>` : ''}
 
       <div class="knapperad">
-        <a class="knapp" href="#/rediger/${v.id}">Rediger</a>
+        <a class="knapp" href="#/rediger/${escapeHtml(v.id)}">Rediger</a>
         <button class="knapp knapp-fare" id="slett-knapp">Slett</button>
       </div>
     </div>
@@ -1254,7 +1327,7 @@ function visDetalj(id) {
   const drukketKnapp = document.getElementById('drukket-knapp');
   if (drukketKnapp) {
     drukketKnapp.addEventListener('click', async () => {
-      const idagIso = new Date().toISOString().slice(0, 10);
+      const idagIso = lokalDatoIso();
       await VinDB.lagre(aktivKjeller.id, { ...v, antallFlasker: 0, drukketDato: idagIso });
     });
   }
@@ -1548,7 +1621,7 @@ function visSkjema(id, forhandsvalgtKategori) {
       <label>Bilde av etikett (kamera eller fra galleriet)
         <input type="file" accept="image/*" id="bilde-input">
       </label>
-      <img id="bilde-forhandsvisning" class="detaljbilde" src="${v.bilde || ''}" style="${v.bilde ? '' : 'display:none'}">
+      <img id="bilde-forhandsvisning" class="detaljbilde" src="${gyldigBilde(v.bilde)}" style="${gyldigBilde(v.bilde) ? '' : 'display:none'}">
 
       ${fraCache ? `
       <p class="hjelpetekst">✅ Strekkoden <strong>${escapeHtml(forhandsutfyltEan)}</strong> er kjent fra før — feltene under er forhåndsutfylt. Sjekk at alt stemmer før du lagrer.</p>
@@ -1660,7 +1733,7 @@ function visSkjema(id, forhandsvalgtKategori) {
 
         <div class="knapperad">
           <button type="submit" class="knapp knapp-primaer">Lagre</button>
-          <a class="knapp" href="${eksisterende ? '#/vin/' + v.id : (vKategori === 'Brennevin' ? '#/brennevin' : '#/viner')}">Avbryt</a>
+          <a class="knapp" href="${eksisterende ? '#/vin/' + escapeHtml(v.id) : (vKategori === 'Brennevin' ? '#/brennevin' : '#/viner')}">Avbryt</a>
         </div>
       </form>
     </div>
@@ -1669,7 +1742,7 @@ function visSkjema(id, forhandsvalgtKategori) {
   const skjema = document.getElementById('vinskjema');
   const bildeInput = document.getElementById('bilde-input');
   const bildeForhandsvisning = document.getElementById('bilde-forhandsvisning');
-  let bildeData = v.bilde || '';
+  let bildeData = gyldigBilde(v.bilde);
   let aiEkstraFelt = { aiToppAr: v.aiToppAr || '', aiBegrunnelse: v.aiBegrunnelse || '', aiKonfidens: v.aiKonfidens || '', drikkeklarKilde: v.drikkeklarKilde || '' };
 
   bildeInput.addEventListener('change', async () => {
@@ -1756,7 +1829,8 @@ function visSkjema(id, forhandsvalgtKategori) {
         felt.value = '';
       } else {
         try {
-          const { antall, hoppetOver } = await importerFraJsonTekst(tekst);
+          const { antall, hoppetOver, avbrutt } = await importerFraJsonTekst(tekst);
+          if (avbrutt) return;
           alert(`Importerte ${antall} post(er) direkte.${hoppetOver ? ` Hoppet over ${hoppetOver} som manglet navn.` : ''}`);
           location.hash = '#/viner';
         } catch (err) {
@@ -1868,7 +1942,7 @@ function visInnstillinger() {
         ${mineKjellere.length > 1 ? `
         <p class="hjelpetekst" style="margin-top:14px;">Bytt kjeller:</p>
         <div class="knapperad">
-          ${mineKjellere.map((k) => `<button class="knapp ${k.id === aktivKjeller.id ? 'knapp-primaer' : ''}" data-bytt-kjeller="${k.id}">${escapeHtml(k.navn)}</button>`).join('')}
+          ${mineKjellere.map((k) => `<button class="knapp ${k.id === aktivKjeller.id ? 'knapp-primaer' : ''}" data-bytt-kjeller="${escapeHtml(k.id)}">${escapeHtml(k.navn)}</button>`).join('')}
         </div>` : ''}
 
         <div class="knapperad" style="margin-top:14px;">
@@ -2025,20 +2099,31 @@ function visInnstillinger() {
   }
 
   document.getElementById('eksporter-knapp').addEventListener('click', () => {
-    const blob = new Blob([JSON.stringify(alleViner, null, 2)], { type: 'application/json' });
+    const eksport = {
+      format: BACKUP_FORMAT,
+      versjon: 2,
+      eksportert: new Date().toISOString(),
+      kjeller: aktivKjeller.navn,
+      viner: alleViner,
+    };
+    const blob = new Blob([JSON.stringify(eksport)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `${aktivKjeller.navn}-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `${aktivKjeller.navn}-backup-${lokalDatoIso()}.json`;
     a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
   });
 
   document.getElementById('importer-input').addEventListener('change', async (e) => {
     const filer = Array.from(e.target.files || []);
     if (!filer.length) return;
 
-    const { totalAntall, totalHoppetOver, feilFiler } = await importerFraFilerListe(filer);
+    const { totalAntall, totalHoppetOver, totalGjenopprettet, antallAvbrutt, feilFiler } = await importerFraFilerListe(filer);
+    e.target.value = ''; // slik at samme fil kan velges igjen
 
+    if (!totalAntall && !feilFiler.length && antallAvbrutt) return; // brukeren avbrøt gjenopprettingen
     let melding = `Importerte ${totalAntall} post(er) fra ${filer.length} fil(er).`;
+    if (totalGjenopprettet) melding += ` ${totalGjenopprettet} av dem er gjenopprettet fra sikkerhetskopi (bilder, drikkehistorikk og øvrige felt er tatt med).`;
     if (totalHoppetOver) melding += ` Hoppet over ${totalHoppetOver} som manglet navn.`;
     if (feilFiler.length) melding += `\n\nFeil i ${feilFiler.length} fil(er):\n${feilFiler.join('\n')}`;
     alert(melding);

@@ -685,12 +685,52 @@ window.addEventListener('hashchange', rute);
 
 // ---------- Innlogging og kjeller-oppstart ----------
 
+// Visninger som bare leser alleViner og trygt kan tegnes på nytt når noen endrer noe i kjelleren.
+// Alt annet (skjema, registrer, kalkulator, innstillinger, admin-sider) har lokal tilstand —
+// tekst under skriving, kamera, slidere, valgt fil — som en ny rute() ville nullstilt.
+const RUTER_SOM_TEGNES_PA_NYTT = new Set(['', 'viner', 'brennevin', 'vin']);
+
+// Skjemaet for rediger ble åpnet før posten var lastet (f.eks. rett etter oppstart), og må
+// tegnes på nytt når den dukker opp. Ellers blir det stående som et tomt «Legg til»-skjema.
+let skjemaVenterPaPost = null;
+
+// Kalles for hvert Firestore-snapshot etter det første (se abonnerPaAktivKjeller).
+function oppdaterEtterEndring() {
+  const path = (location.hash.match(/^#\/?([^/]*)/) || [])[1] || '';
+  if (path === 'rediger' && skjemaVenterPaPost && alleViner.some((x) => x.id === skjemaVenterPaPost)) {
+    rute();
+    return;
+  }
+  if (!RUTER_SOM_TEGNES_PA_NYTT.has(path)) return;
+  // Søkefeltet i lister har fokus mens man skriver: bytt bare ut resultatlista, så feltet beholder fokus.
+  if ((path === 'viner' || path === 'brennevin') && document.activeElement?.id === 'sok') {
+    renderVinlisteResultat();
+    return;
+  }
+  rute();
+}
+
 function abonnerPaAktivKjeller() {
   if (vinerAvslutt) vinerAvslutt();
   app.innerHTML = '<div class="side"><p class="tom">Laster kjelleren…</p></div>';
+  let forsteSnapshot = true;
   vinerAvslutt = VinDB.abonner(aktivKjeller.id, (liste) => {
     alleViner = liste.sort((a, b) => (a.navn || '').localeCompare(b.navn || '', 'nb'));
-    rute();
+    if (forsteSnapshot) {
+      forsteSnapshot = false;
+      rute(); // første data: tegn den aktuelle visningen, uansett hvilken
+    } else {
+      oppdaterEtterEndring();
+    }
+  });
+}
+
+// Skriveoperasjoner treffer lokal cache først og bekreftes av serveren senere (offline: når nettet
+// er tilbake). Vi venter derfor ikke på løftet, men sier fra hvis serveren til slutt avviser skrivingen.
+function meldFeilVedAvvist(lofte, handling = 'lagre endringen') {
+  lofte.catch((err) => {
+    console.error(`[vinkjeller] Kunne ikke ${handling}:`, err);
+    alert(`Kunne ikke ${handling}: ${err.message || err}`);
   });
 }
 
@@ -918,11 +958,19 @@ function visKjellerOnboarding() {
     </div>
   `));
 
-  document.getElementById('opprett-kjeller-knapp').addEventListener('click', async () => {
+  document.getElementById('opprett-kjeller-knapp').addEventListener('click', async (e) => {
+    const knapp = e.currentTarget;
     const navn = document.getElementById('ny-kjeller-navn').value.trim();
-    const ny = await KjellerDB.opprett(navn || `${fornavn} sin kjeller`);
-    mineKjellere.push(ny);
-    byttAktivKjeller(ny.id);
+    knapp.disabled = true; // hindrer at dobbelttrykk oppretter to kjellere
+    try {
+      const ny = await KjellerDB.opprett(navn || `${fornavn} sin kjeller`);
+      mineKjellere.push(ny);
+      byttAktivKjeller(ny.id);
+    } catch (err) {
+      console.error('[vinkjeller] Kunne ikke opprette kjeller:', err);
+      alert(`Kunne ikke opprette kjelleren: ${err.message || err}`);
+      knapp.disabled = false;
+    }
   });
 
   document.getElementById('bli-med-knapp').addEventListener('click', async () => {
@@ -1286,8 +1334,8 @@ function visDetalj(id) {
     fyllnivaSlider.addEventListener('input', () => {
       fyllnivaTall.textContent = `${fyllnivaSlider.value}%`;
     });
-    fyllnivaSlider.addEventListener('change', async () => {
-      await VinDB.lagre(aktivKjeller.id, { ...v, fyllniva: Number(fyllnivaSlider.value) });
+    fyllnivaSlider.addEventListener('change', () => {
+      meldFeilVedAvvist(VinDB.oppdater(aktivKjeller.id, v.id, { fyllniva: Number(fyllnivaSlider.value) }));
     });
   }
 
@@ -1298,52 +1346,46 @@ function visDetalj(id) {
       const n = Number(vurderingSlider.value);
       vurderingStjerner.textContent = n ? '★'.repeat(n) + '☆'.repeat(5 - n) : 'Ingen vurdering';
     });
-    vurderingSlider.addEventListener('change', async () => {
+    vurderingSlider.addEventListener('change', () => {
       const n = Number(vurderingSlider.value);
-      await VinDB.lagre(aktivKjeller.id, { ...v, vurdering: n || '' });
+      meldFeilVedAvvist(VinDB.oppdater(aktivKjeller.id, v.id, { vurdering: n || '' }));
     });
   }
 
-  // Knappen leser v.antallFlasker fra denne rendringen (lukket over i klikk-handleren) —
-  // uten å deaktivere den med én gang ville rask gjentatt trykking (f.eks. for å gå fra
-  // 1 til 8 flasker) bare skrevet det SAMME +1-resultatet om igjen for hvert trykk, siden
-  // siden ikke rekker å tegnes på nytt med fersk v mellom hvert trykk.
+  // +/− flaske bruker en atomisk increment på serveren, så hvert trykk teller (også flere raske
+  // trykk, og trykk fra flere medlemmer samtidig) uten å skrive hele dokumentet fra en gammel kopi.
   const leggTilFlaskeKnapp = document.getElementById('legg-til-flaske-knapp');
   if (leggTilFlaskeKnapp) {
-    leggTilFlaskeKnapp.addEventListener('click', async () => {
-      leggTilFlaskeKnapp.disabled = true;
-      await VinDB.lagre(aktivKjeller.id, { ...v, antallFlasker: (Number(v.antallFlasker) || 0) + 1 });
+    leggTilFlaskeKnapp.addEventListener('click', () => {
+      meldFeilVedAvvist(VinDB.endreAntall(aktivKjeller.id, v.id, 1));
     });
   }
 
   const taUtFlaskeKnapp = document.getElementById('ta-ut-flaske-knapp');
   if (taUtFlaskeKnapp) {
-    taUtFlaskeKnapp.addEventListener('click', async () => {
-      taUtFlaskeKnapp.disabled = true;
-      await VinDB.lagre(aktivKjeller.id, { ...v, antallFlasker: Math.max(0, (Number(v.antallFlasker) || 0) - 1) });
+    taUtFlaskeKnapp.addEventListener('click', () => {
+      meldFeilVedAvvist(VinDB.endreAntall(aktivKjeller.id, v.id, -1));
     });
   }
 
   const drukketKnapp = document.getElementById('drukket-knapp');
   if (drukketKnapp) {
-    drukketKnapp.addEventListener('click', async () => {
-      const idagIso = lokalDatoIso();
-      await VinDB.lagre(aktivKjeller.id, { ...v, antallFlasker: 0, drukketDato: idagIso });
+    drukketKnapp.addEventListener('click', () => {
+      meldFeilVedAvvist(VinDB.oppdater(aktivKjeller.id, v.id, { antallFlasker: 0, drukketDato: lokalDatoIso() }));
     });
   }
 
   const angreDrukketKnapp = document.getElementById('angre-drukket-knapp');
   if (angreDrukketKnapp) {
-    angreDrukketKnapp.addEventListener('click', async () => {
-      await VinDB.lagre(aktivKjeller.id, { ...v, antallFlasker: Math.max(1, Number(v.antallFlasker) || 0), drukketDato: '' });
+    angreDrukketKnapp.addEventListener('click', () => {
+      meldFeilVedAvvist(VinDB.oppdater(aktivKjeller.id, v.id, { antallFlasker: Math.max(1, Number(v.antallFlasker) || 0), drukketDato: '' }));
     });
   }
 
-  document.getElementById('slett-knapp').addEventListener('click', async () => {
-    if (confirm(`Slette «${v.navn}» fra kjelleren?`)) {
-      await VinDB.slett(aktivKjeller.id, v.id);
-      location.hash = tilbakeHref;
-    }
+  document.getElementById('slett-knapp').addEventListener('click', () => {
+    if (!confirm(`Slette «${v.navn}» fra kjelleren?`)) return;
+    meldFeilVedAvvist(VinDB.slett(aktivKjeller.id, v.id), 'slette');
+    location.hash = tilbakeHref; // ikke vent på serveren — offline ville siden blitt stående
   });
 }
 
@@ -1585,6 +1627,7 @@ function visSkjema(id, forhandsvalgtKategori) {
   const skannData = ventendeSkannData;
   ventendeSkannData = null;
   const eksisterende = id ? alleViner.find((x) => x.id === id) : null;
+  skjemaVenterPaPost = id && !eksisterende ? id : null;
   const forhandsutfyltEan = !eksisterende && skannData ? skannData.ean : '';
   const fraSkann = !!forhandsutfyltEan;
   const fraCache = fraSkann && !!skannData.harCacheTreff;
@@ -1840,57 +1883,88 @@ function visSkjema(id, forhandsvalgtKategori) {
     });
   }
 
+  // Lagre-knappen låses mens vi lagrer, slik at dobbelttrykk (eller Enter to ganger) ikke gir to poster.
+  let lagrer = false;
   skjema.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const fd = new FormData(skjema);
-    const matparKategorier = fd.getAll('matpar');
-    const kategoriValgt = fd.get('kategori') || 'Vin';
-    const nyVin = {
-      ...v,
-      kategori: kategoriValgt,
-      navn: fd.get('navn').trim(),
-      produsent: fd.get('produsent').trim(),
-      argang: fd.get('argang').trim(),
-      type: fd.get('type'),
-      land: fd.get('land').trim(),
-      region: fd.get('region').trim(),
-      druer: fd.get('druer').trim(),
-      antallFlasker: Number(fd.get('antallFlasker')) || 0,
-      volumCl: Number(fd.get('volumCl')) || 0,
-      fyllniva: kategoriValgt === 'Brennevin' ? Number(fd.get('fyllniva')) : '',
-      innkjopspris: fd.get('innkjopspris') ? Number(fd.get('innkjopspris')) : '',
-      innkjopsdato: fd.get('innkjopsdato'),
-      kjoptHos: fd.get('kjoptHos').trim(),
-      ean: fd.get('ean').trim(),
-      lagringssted: fd.get('lagringssted').trim(),
-      lagringstemperatur: fd.get('lagringstemperatur').trim(),
-      lagringsfuktighet: fd.get('lagringsfuktighet').trim(),
-      serveringstemperatur: fd.get('serveringstemperatur').trim(),
-      drikkeklarFra: fd.get('drikkeklarFra') ? Number(fd.get('drikkeklarFra')) : '',
-      drikkeklarTil: fd.get('drikkeklarTil') ? Number(fd.get('drikkeklarTil')) : '',
-      matparKategorier,
-      matparNotater: fd.get('matparNotater').trim(),
-      smaksnotater: fd.get('smaksnotater').trim(),
-      vurdering: fd.get('vurdering') ? Number(fd.get('vurdering')) : '',
-      bilde: bildeData,
-      ...aiEkstraFelt,
+    if (lagrer) return;
+    lagrer = true;
+    const lagreKnapp = skjema.querySelector('button[type="submit"]');
+    const lagreKnappTekst = lagreKnapp.textContent;
+    lagreKnapp.disabled = true;
+    lagreKnapp.textContent = 'Lagrer…';
+    const opphevLas = () => {
+      lagrer = false;
+      lagreKnapp.disabled = false;
+      lagreKnapp.textContent = lagreKnappTekst;
     };
-    if (eksisterende) nyVin.id = eksisterende.id;
-    const id2 = await VinDB.lagre(aktivKjeller.id, nyVin);
 
-    if (nyVin.ean) {
-      const produktFakta = {
-        kategori: nyVin.kategori, navn: nyVin.navn, produsent: nyVin.produsent, argang: nyVin.argang,
-        type: nyVin.type, land: nyVin.land, region: nyVin.region, druer: nyVin.druer,
-        lagringstemperatur: nyVin.lagringstemperatur, lagringsfuktighet: nyVin.lagringsfuktighet,
-        serveringstemperatur: nyVin.serveringstemperatur, drikkeklarFra: nyVin.drikkeklarFra, drikkeklarTil: nyVin.drikkeklarTil,
-        matparKategorier: nyVin.matparKategorier, matparNotater: nyVin.matparNotater,
-        aiToppAr: nyVin.aiToppAr, aiBegrunnelse: nyVin.aiBegrunnelse, aiKonfidens: nyVin.aiKonfidens, drikkeklarKilde: nyVin.drikkeklarKilde,
+    try {
+      const fd = new FormData(skjema);
+      const matparKategorier = fd.getAll('matpar');
+      const kategoriValgt = fd.get('kategori') || 'Vin';
+      const nyVin = {
+        ...v,
+        kategori: kategoriValgt,
+        navn: fd.get('navn').trim(),
+        produsent: fd.get('produsent').trim(),
+        argang: fd.get('argang').trim(),
+        type: fd.get('type'),
+        land: fd.get('land').trim(),
+        region: fd.get('region').trim(),
+        druer: fd.get('druer').trim(),
+        antallFlasker: Number(fd.get('antallFlasker')) || 0,
+        volumCl: Number(fd.get('volumCl')) || 0,
+        fyllniva: kategoriValgt === 'Brennevin' ? Number(fd.get('fyllniva')) : '',
+        innkjopspris: fd.get('innkjopspris') ? Number(fd.get('innkjopspris')) : '',
+        innkjopsdato: fd.get('innkjopsdato'),
+        kjoptHos: fd.get('kjoptHos').trim(),
+        ean: fd.get('ean').trim(),
+        lagringssted: fd.get('lagringssted').trim(),
+        lagringstemperatur: fd.get('lagringstemperatur').trim(),
+        lagringsfuktighet: fd.get('lagringsfuktighet').trim(),
+        serveringstemperatur: fd.get('serveringstemperatur').trim(),
+        drikkeklarFra: fd.get('drikkeklarFra') ? Number(fd.get('drikkeklarFra')) : '',
+        drikkeklarTil: fd.get('drikkeklarTil') ? Number(fd.get('drikkeklarTil')) : '',
+        matparKategorier,
+        matparNotater: fd.get('matparNotater').trim(),
+        smaksnotater: fd.get('smaksnotater').trim(),
+        vurdering: fd.get('vurdering') ? Number(fd.get('vurdering')) : '',
+        bilde: bildeData,
+        ...aiEkstraFelt,
       };
-      ProduktDB.lagre(nyVin.ean, produktFakta).catch((err) => console.error('[vinkjeller] Kunne ikke oppdatere delt strekkode-cache:', err));
-    }
+      if (eksisterende) nyVin.id = eksisterende.id;
+      const { id: id2, skrevet } = VinDB.lagre(aktivKjeller.id, nyVin);
+      const utfall = skrevet.then(() => 'ok', (err) => { console.error('[vinkjeller] Lagring avvist:', err); return err; });
 
-    location.hash = `#/vin/${eksisterende ? eksisterende.id : id2}`;
+      if (nyVin.ean) {
+        const produktFakta = {
+          kategori: nyVin.kategori, navn: nyVin.navn, produsent: nyVin.produsent, argang: nyVin.argang,
+          type: nyVin.type, land: nyVin.land, region: nyVin.region, druer: nyVin.druer,
+          lagringstemperatur: nyVin.lagringstemperatur, lagringsfuktighet: nyVin.lagringsfuktighet,
+          serveringstemperatur: nyVin.serveringstemperatur, drikkeklarFra: nyVin.drikkeklarFra, drikkeklarTil: nyVin.drikkeklarTil,
+          matparKategorier: nyVin.matparKategorier, matparNotater: nyVin.matparNotater,
+          aiToppAr: nyVin.aiToppAr, aiBegrunnelse: nyVin.aiBegrunnelse, aiKonfidens: nyVin.aiKonfidens, drikkeklarKilde: nyVin.drikkeklarKilde,
+        };
+        ProduktDB.lagre(nyVin.ean, produktFakta).catch((err) => console.error('[vinkjeller] Kunne ikke oppdatere delt strekkode-cache:', err));
+      }
+
+      // Vent på serverbekreftelsen, men maks 1,5 s: offline hviler skrivingen i den lokale cachen
+      // (visningen har allerede oppdatert seg) og skal ikke holde brukeren fast på skjemaet.
+      const svar = await Promise.race([utfall, new Promise((resolve) => setTimeout(() => resolve('tidsavbrudd'), 1500))]);
+      if (svar !== 'ok' && svar !== 'tidsavbrudd') {
+        alert(`Kunne ikke lagre: ${svar.message || svar}`);
+        opphevLas();
+        return;
+      }
+      if (svar === 'tidsavbrudd') meldFeilVedAvvist(skrevet, 'lagre');
+
+      location.hash = `#/vin/${id2}`;
+    } catch (err) {
+      console.error('[vinkjeller] Feil ved lagring:', err);
+      alert(`Kunne ikke lagre: ${err.message || err}`);
+      opphevLas();
+    }
   });
 }
 
@@ -2051,9 +2125,16 @@ function visInnstillinger() {
   if (nyKodeKnapp) {
     nyKodeKnapp.addEventListener('click', async () => {
       if (!confirm('Lage ny kode? Den gamle koden slutter å virke.')) return;
-      const kode = await KjellerDB.nyInviteKode(aktivKjeller.id, aktivKjeller.inviteKode);
-      aktivKjeller.inviteKode = kode;
-      visInnstillinger();
+      nyKodeKnapp.disabled = true;
+      try {
+        const kode = await KjellerDB.nyInviteKode(aktivKjeller.id, aktivKjeller.inviteKode);
+        aktivKjeller.inviteKode = kode;
+        visInnstillinger();
+      } catch (err) {
+        console.error('[vinkjeller] Kunne ikke lage ny kode:', err);
+        alert(`Kunne ikke lage ny kode: ${err.message || err}`);
+        nyKodeKnapp.disabled = false;
+      }
     });
   }
 
@@ -2061,12 +2142,20 @@ function visInnstillinger() {
     knapp.addEventListener('click', () => byttAktivKjeller(knapp.dataset.byttKjeller));
   });
 
-  document.getElementById('ny-kjeller-knapp').addEventListener('click', async () => {
+  document.getElementById('ny-kjeller-knapp').addEventListener('click', async (e) => {
+    const knapp = e.currentTarget;
     const navn = prompt('Navn på den nye kjelleren:');
     if (navn === null) return;
-    const ny = await KjellerDB.opprett(navn);
-    mineKjellere.push(ny);
-    byttAktivKjeller(ny.id);
+    knapp.disabled = true;
+    try {
+      const ny = await KjellerDB.opprett(navn);
+      mineKjellere.push(ny);
+      byttAktivKjeller(ny.id);
+    } catch (err) {
+      console.error('[vinkjeller] Kunne ikke opprette kjeller:', err);
+      alert(`Kunne ikke opprette kjelleren: ${err.message || err}`);
+      knapp.disabled = false;
+    }
   });
 
   document.getElementById('bli-med-knapp-innst').addEventListener('click', async () => {
@@ -2086,7 +2175,15 @@ function visInnstillinger() {
     forlatKnapp.addEventListener('click', async () => {
       if (!confirm(`Forlate «${aktivKjeller.navn}»? Du mister tilgang til denne kjellerens data.`)) return;
       const forlattId = aktivKjeller.id;
-      await KjellerDB.forlat(forlattId);
+      forlatKnapp.disabled = true;
+      try {
+        await KjellerDB.forlat(forlattId);
+      } catch (err) {
+        console.error('[vinkjeller] Kunne ikke forlate kjeller:', err);
+        alert(`Kunne ikke forlate kjelleren: ${err.message || err}`);
+        forlatKnapp.disabled = false;
+        return;
+      }
       mineKjellere = mineKjellere.filter((k) => k.id !== forlattId);
       if (mineKjellere.length) {
         byttAktivKjeller(mineKjellere[0].id);
@@ -2134,10 +2231,17 @@ function visInnstillinger() {
 
   document.getElementById('logg-ut-knapp').addEventListener('click', () => loggUt());
 
-  document.getElementById('slett-alt-knapp').addEventListener('click', async () => {
-    if (confirm(`Sikker på at du vil slette ALT (vin og brennevin) i «${aktivKjeller.navn}»? Dette kan ikke angres, og påvirker alle medlemmer.`)) {
+  document.getElementById('slett-alt-knapp').addEventListener('click', async (e) => {
+    const knapp = e.currentTarget;
+    if (!confirm(`Sikker på at du vil slette ALT (vin og brennevin) i «${aktivKjeller.navn}»? Dette kan ikke angres, og påvirker alle medlemmer.`)) return;
+    knapp.disabled = true;
+    try {
       await VinDB.slettAlt(aktivKjeller.id);
       location.hash = '#/';
+    } catch (err) {
+      console.error('[vinkjeller] Kunne ikke slette alt:', err);
+      alert(`Kunne ikke slette alt: ${err.message || err}`);
+      knapp.disabled = false;
     }
   });
 }

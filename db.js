@@ -20,7 +20,7 @@ export const ADMIN_UID = 'po4qTCXpl4W7AneJDHdc5ZpkMM22';
 
 import {
   collection, doc, getDoc, getDocs, addDoc, setDoc, deleteDoc, updateDoc,
-  query, where, onSnapshot, serverTimestamp, writeBatch, arrayUnion,
+  query, where, onSnapshot, serverTimestamp, writeBatch, arrayUnion, increment,
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { db } from './firebase-init.js';
 import { gjeldendeBruker } from './auth.js';
@@ -121,7 +121,11 @@ export const VinDB = {
     return snap.exists() ? { ...snap.data(), id: snap.id } : null;
   },
 
-  async lagre(kjellerId, vin) {
+  // Oppretter eller oppdaterer en hel post (skjemaet). Returnerer id med én gang, sammen med et løfte
+  // (`skrevet`) som først oppfylles når serveren har bekreftet skrivingen. Offline blir det hengende
+  // til nettet er tilbake, så kallere skal ikke vente på det uten tidsavbrudd — det lokale
+  // snapshotet oppdateres uansett med en gang.
+  lagre(kjellerId, vin) {
     const info = brukerInfo();
     const data = { ...vin };
     const erNy = !data.id;
@@ -131,12 +135,23 @@ export const VinDB = {
     if (data.drukketDato && !data.drukketAv) data.drukketAv = info;
     if (!data.drukketDato) data.drukketAv = null;
 
-    if (erNy) {
-      const ref = await addDoc(vinerCollection(kjellerId), data);
-      return ref.id;
-    }
-    await setDoc(doc(db, 'kjellere', kjellerId, 'viner', vin.id), data, { merge: true });
-    return vin.id;
+    const ref = erNy ? doc(vinerCollection(kjellerId)) : doc(db, 'kjellere', kjellerId, 'viner', vin.id);
+    return { id: ref.id, skrevet: setDoc(ref, data, { merge: true }) };
+  },
+
+  // Endrer bare de oppgitte feltene i stedet for å skrive hele dokumentet (inkl. bildet) fra en
+  // mulig utdatert kopi, så samtidige endringer av andre felt fra andre medlemmer overskrives ikke.
+  // Feiler hvis posten er slettet i mellomtiden. Returnerer et løfte som oppfylles ved serverbekreftelse.
+  // (async, slik at også synkrone feil havner i det returnerte løftet og fanges av kallerens .catch)
+  async oppdater(kjellerId, vinId, felter) {
+    const data = { ...felter };
+    if ('drukketDato' in data) data.drukketAv = data.drukketDato ? brukerInfo() : null;
+    await updateDoc(doc(db, 'kjellere', kjellerId, 'viner', vinId), data);
+  },
+
+  // Atomisk endring av antall flasker (+1/−1), slik at to som trykker samtidig begge telles.
+  async endreAntall(kjellerId, vinId, delta) {
+    await updateDoc(doc(db, 'kjellere', kjellerId, 'viner', vinId), { antallFlasker: increment(delta) });
   },
 
   async slett(kjellerId, vinId) {

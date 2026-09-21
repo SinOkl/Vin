@@ -13,9 +13,13 @@ export async function startSkann(videoElement, { onTreff, onFeil }) {
       videoElement,
       (resultat, feil, kontrollNa) => {
         if (stoppet || !resultat) return;
+        // Leseren tolker også QR, Code128 osv. Bare EAN/UPC (8–14 siffer) er nyttig her — alt annet
+        // ignoreres slik at skanningen fortsetter i stedet for å stoppe på en strekkode appen ikke kan bruke.
+        const tekst = resultat.getText();
+        if (!/^[0-9]{8,14}$/.test(tekst)) return;
         stoppet = true;
         kontrollNa.stop();
-        onTreff(resultat.getText());
+        onTreff(tekst);
       }
     );
     return () => {

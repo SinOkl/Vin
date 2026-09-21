@@ -7,17 +7,24 @@ rules_version = '2';
 //   kjellere/{kjellerId}/viner/{vinId}   selve vin-/brennevindataen
 //   produkter/{ean}                     delt strekkode-cache — produktfakta, ikke kjeller-spesifikk
 //   brukere/{uid}                       { navn, epost, foto, status: 'ventende'|'godkjent'|'avvist', opprettet }
+//   tilbakemeldinger/{id}               { type, tekst, bilde, bruker, side, status, opprettet } — se feedback-modul/
+//   faktafremdrift/{uid}                "Dagens fakta"-fremdrift per bruker (fakta-db.js)
 //
 // Nye brukere godkjennes av ADMIN_UID (se konstanten under) før de kan opprette
 // eller bli med i noen kjeller — se erGodkjent() og brukere/-reglene nederst.
 // ADMIN_UID må matche eksakt konstanten med samme navn i db.js.
+//
+// Å opprette noe i de delte samlingene (kjellere, invitasjoner, produkter, tilbakemeldinger,
+// faktafremdrift) krever godkjent bruker (erGodkjent()) — Firebase Auth er åpen for alle med en
+// Google-konto, så «innlogget» alene er ikke nok. Tilgang til en eksisterende kjeller og dens viner
+// styres derimot av medlemskap (erMedlemAv), også om brukeren senere settes til 'avvist'.
 //
 // Kun medlemmer av en kjeller kan lese/liste dens metadata og vinliste — ingen kan
 // bla gjennom andres kjellere. "Bli med via kode"-flyten går via invitasjoner/-
 // samlingen, som kun kan slås opp med eksakt kjent kode (aldri listet ut).
 // produkter/-samlingen er delt på tvers av alle kjellere med vilje (poenget er at
 // alle som bruker appen skal få nytte av at noen andre har identifisert samme
-// strekkode), og er derfor lesbar/skrivbar for alle innloggede, ikke bare egne
+// strekkode), og er derfor lesbar/skrivbar for alle godkjente brukere, ikke bare egne
 // medlemmer — det er ikke persondata, kun objektive vin-/brennevinfakta.
 // Passer for en liten, tillitsfull venne-/familiegruppe — ikke tenkt som hardnet
 // flerbrukers-SaaS-sikkerhet.
@@ -67,11 +74,18 @@ service cloud.firestore {
         ny.inviteKode == gammel.inviteKode;
     }
 
-    // Kun oppslåbar med eksakt kjent kode (get), aldri gjennombla-bar (list).
+    // Kun oppslåbar med eksakt kjent kode (get), aldri gjennombla-bar (list). Bare eieren av
+    // kjelleren kan opprette en kode for den, og koden må ha formatet slumpKode() i db.js lager
+    // (6 tegn, store bokstaver/sifre) — ellers kunne hvem som helst fylle samlingen med søppel eller
+    // kapre en kode som peker mot en annens kjeller.
     match /invitasjoner/{kode} {
-      allow get: if innlogget();
+      allow get: if innlogget() && erGodkjent();
       allow list: if false;
-      allow create: if innlogget();
+      allow create: if innlogget() && erGodkjent()
+        && kode.matches('[A-Z2-9]{6}')
+        && request.resource.data.keys().hasOnly(['kjellerId'])
+        && request.resource.data.kjellerId is string
+        && get(/databases/$(database)/documents/kjellere/$(request.resource.data.kjellerId)).data.eierUid == request.auth.uid;
       allow update: if false;
       allow delete: if innlogget() &&
         get(/databases/$(database)/documents/kjellere/$(resource.data.kjellerId)).data.eierUid == request.auth.uid;
@@ -99,12 +113,16 @@ service cloud.firestore {
     }
 
     // Delt strekkode-cache. EAN-en er selve dokument-ID-en, ikke et felt — derfor er
-    // "get" (oppslag på kjent EAN) trygt å åpne for alle innloggede uten å avsløre
-    // noe man ikke allerede vet (samme prinsipp som invitasjoner/, se over).
+    // "get" (oppslag på kjent EAN) trygt å åpne for alle godkjente uten å avsløre
+    // noe man ikke allerede vet (samme prinsipp som invitasjoner/, se over). Ikke-godkjente
+    // kan verken lese eller skrive, og ID-en må ligne en strekkode (8–14 siffer: EAN-8, UPC-A,
+    // EAN-13, GTIN-14). Antall felt er begrenset så et dokument ikke kan brukes som fri lagring.
     match /produkter/{ean} {
-      allow get: if innlogget();
+      allow get: if innlogget() && erGodkjent() && ean.matches('[0-9]{8,14}');
       allow list: if false;
-      allow create, update: if innlogget();
+      allow create, update: if innlogget() && erGodkjent()
+        && ean.matches('[0-9]{8,14}')
+        && request.resource.data.keys().size() <= 30;
       allow delete: if false;
     }
 
@@ -119,6 +137,18 @@ service cloud.firestore {
          (uid == adminUid() && request.resource.data.status == 'godkjent'));
       allow update: if innlogget() && request.auth.uid == adminUid();
       allow delete: if false;
+    }
+
+    // Fremdriften fakta-db.js skriver: to stokkede id-lister (50 hver, tak 200) og noen tellere.
+    // Ukjente felt tillates (ingen hasOnly) så ikke eldre dokumenter blir stengt ute, men antallet
+    // er begrenset. «is number» i stedet for «is int» så et heltall lagret som flyttall ikke feiler.
+    function gyldigFaktafremdrift(d) {
+      return d.keys().size() <= 10
+        && (!('nbShuffledFactIds' in d) || (d.nbShuffledFactIds is list && d.nbShuffledFactIds.size() <= 200))
+        && (!('mfShuffledFactIds' in d) || (d.mfShuffledFactIds is list && d.mfShuffledFactIds.size() <= 200))
+        && (!('currentIndex' in d) || (d.currentIndex is number && d.currentIndex >= 0))
+        && (!('cycleCount' in d) || (d.cycleCount is number && d.cycleCount >= 0))
+        && (!('totalOpens' in d) || (d.totalOpens is number && d.totalOpens >= 0));
     }
 
     // Skjermbilde-vedlegget vises av admin-siden som <img src="…">, så det må være en ren
@@ -152,7 +182,8 @@ service cloud.firestore {
     match /faktafremdrift/{uid} {
       allow get: if innlogget() && (request.auth.uid == uid || request.auth.uid == adminUid());
       allow list: if innlogget() && request.auth.uid == adminUid();
-      allow create, update: if innlogget() && request.auth.uid == uid;
+      allow create, update: if innlogget() && erGodkjent() && request.auth.uid == uid
+        && gyldigFaktafremdrift(request.resource.data);
       allow delete: if false;
     }
   }

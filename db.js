@@ -204,14 +204,40 @@ export const VinDB = {
 // kjellere. Skrives til hver gang noen lagrer en vin med strekkode, slik at neste
 // skann av samme flaske — av hvem som helst i appen — gir treff momentant.
 
+// Strekkoden er dokument-ID-en og må ligne en strekkode (8–14 siffer), samme krav som i
+// firestore.rules. Alt annet (blank, med mellomrom, «/» osv.) hoppes stille over her.
+export function erGyldigEan(ean) {
+  return typeof ean === 'string' && /^[0-9]{8,14}$/.test(ean);
+}
+
+// Feltene som deles i produkter/{ean} (samme liste som skjemaet i app.js sender inn).
+const PRODUKT_FELT = [
+  'kategori', 'navn', 'produsent', 'argang', 'type', 'land', 'region', 'druer',
+  'lagringstemperatur', 'lagringsfuktighet', 'serveringstemperatur', 'drikkeklarFra', 'drikkeklarTil',
+  'matparKategorier', 'aiToppAr', 'aiBegrunnelse', 'aiKonfidens', 'drikkeklarKilde',
+];
+
 export const ProduktDB = {
   async hentByEan(ean) {
+    if (!erGyldigEan(ean)) return null;
     const snap = await getDoc(doc(db, 'produkter', ean));
-    return snap.exists() ? snap.data() : null;
+    if (!snap.exists()) return null;
+    // Bare kjente produktfelt slippes ut (hviteliste): cachen kan skrives av alle godkjente, og
+    // skjemaet forhåndsutfylles direkte fra den. Dette utelater også matparNotater (personlige
+    // notater eldre versjoner la i den delte cachen) og oppdatert (bokføring).
+    const data = snap.data();
+    const fakta = {};
+    for (const felt of PRODUKT_FELT) if (data[felt] !== undefined) fakta[felt] = data[felt];
+    return fakta;
   },
 
   async lagre(ean, produktFakta) {
-    await setDoc(doc(db, 'produkter', ean), { ...produktFakta, oppdatert: serverTimestamp() }, { merge: true });
+    if (!erGyldigEan(ean)) return;
+    const { matparNotater, ...fakta } = produktFakta;
+    // Tomme felt sendes ikke med: med merge ville de overskrevet gode verdier andre har registrert.
+    const felt = Object.fromEntries(Object.entries(fakta).filter(([, v]) =>
+      v !== '' && v !== null && v !== undefined && !(Array.isArray(v) && v.length === 0)));
+    await setDoc(doc(db, 'produkter', ean), { ...felt, oppdatert: serverTimestamp() }, { merge: true });
   },
 };
 

@@ -1,4 +1,4 @@
-import { VinDB, KjellerDB, ProduktDB, BrukerDB, ADMIN_UID } from './db.js';
+import { VinDB, KjellerDB, ProduktDB, BrukerDB, ADMIN_UID, erGyldigEan } from './db.js';
 import { loggInnMedGoogle, loggUt, paInnloggingsendring, gjeldendeBruker } from './auth.js';
 import { db } from './firebase-init.js';
 import './feedback-modul/tilbakemelding-widget.js';
@@ -1468,6 +1468,11 @@ function fyllSkjemaFraVin(skjema, data) {
 // bæres de med videre slik at skjemaet forhåndsutfylles og AI ikke er nødvendig. Uansett
 // bæres EAN-en og bildet som ble tatt videre til skjemaet (#/ny).
 async function handterRegistrertEan(ean, bildeData) {
+  ean = ean.replace(/[\s-]/g, ''); // mellomrom/bindestrek fra manuell inntasting
+  if (!erGyldigEan(ean)) {
+    alert('Strekkoden må være 8–14 siffer. Sjekk at du skrev riktig.');
+    return;
+  }
   const funnet = alleViner.find((v) => v.ean === ean && !v.drukketDato);
   if (funnet) {
     alert(`«${funnet.navn}» finnes allerede i kjelleren. Bruk «+ Legg til flaske» på vinen for å øke antallet.`);
@@ -1597,7 +1602,7 @@ function registrerSkannSteg(forhandsvalgtKategori, bildeData) {
   document.getElementById('skann-manuell-knapp').addEventListener('click', () => {
     const ean = document.getElementById('skann-manuell-input').value.trim();
     if (!ean) { alert('Skriv inn strekkoden først.'); return; }
-    handterRegistrertEan(ean, bildeData);
+    handterRegistrertEan(ean, bildeData); // validerer formatet selv
   });
 
   import('./skann.js').then(({ startSkann }) => {
@@ -1633,7 +1638,7 @@ function visSkjema(id, forhandsvalgtKategori) {
   const fraCache = fraSkann && !!skannData.harCacheTreff;
   const kategoriStart = eksisterende
     ? (eksisterende.kategori || 'Vin')
-    : (fraCache && skannData.kategori) || (forhandsvalgtKategori === 'Brennevin' ? 'Brennevin' : 'Vin');
+    : (fraCache && KATEGORIER.includes(skannData.kategori) && skannData.kategori) || (forhandsvalgtKategori === 'Brennevin' ? 'Brennevin' : 'Vin');
   const v = eksisterende || {
     kategori: kategoriStart,
     navn: '', produsent: '', argang: '', type: TYPER[kategoriStart][0], land: '', region: '', druer: '',
@@ -1919,7 +1924,7 @@ function visSkjema(id, forhandsvalgtKategori) {
         innkjopspris: fd.get('innkjopspris') ? Number(fd.get('innkjopspris')) : '',
         innkjopsdato: fd.get('innkjopsdato'),
         kjoptHos: fd.get('kjoptHos').trim(),
-        ean: fd.get('ean').trim(),
+        ean: fd.get('ean').replace(/[\s-]/g, ''),
         lagringssted: fd.get('lagringssted').trim(),
         lagringstemperatur: fd.get('lagringstemperatur').trim(),
         lagringsfuktighet: fd.get('lagringsfuktighet').trim(),
@@ -1934,6 +1939,12 @@ function visSkjema(id, forhandsvalgtKategori) {
         ...aiEkstraFelt,
       };
       if (eksisterende) nyVin.id = eksisterende.id;
+      // (en eldre vin med en uvanlig strekkode kan fortsatt lagres så lenge feltet ikke er endret)
+      if (nyVin.ean && !erGyldigEan(nyVin.ean) && nyVin.ean !== eksisterende?.ean) {
+        alert('Strekkoden må være 8–14 siffer (eller la feltet stå tomt).');
+        opphevLas();
+        return;
+      }
       const { id: id2, skrevet } = VinDB.lagre(aktivKjeller.id, nyVin);
       const utfall = skrevet.then(() => 'ok', (err) => { console.error('[vinkjeller] Lagring avvist:', err); return err; });
 
@@ -1943,7 +1954,7 @@ function visSkjema(id, forhandsvalgtKategori) {
           type: nyVin.type, land: nyVin.land, region: nyVin.region, druer: nyVin.druer,
           lagringstemperatur: nyVin.lagringstemperatur, lagringsfuktighet: nyVin.lagringsfuktighet,
           serveringstemperatur: nyVin.serveringstemperatur, drikkeklarFra: nyVin.drikkeklarFra, drikkeklarTil: nyVin.drikkeklarTil,
-          matparKategorier: nyVin.matparKategorier, matparNotater: nyVin.matparNotater,
+          matparKategorier: nyVin.matparKategorier, // matparNotater er personlig og deles ikke
           aiToppAr: nyVin.aiToppAr, aiBegrunnelse: nyVin.aiBegrunnelse, aiKonfidens: nyVin.aiKonfidens, drikkeklarKilde: nyVin.drikkeklarKilde,
         };
         ProduktDB.lagre(nyVin.ean, produktFakta).catch((err) => console.error('[vinkjeller] Kunne ikke oppdatere delt strekkode-cache:', err));

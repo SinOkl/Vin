@@ -3,13 +3,14 @@
 const KJOLE_MILJOER = {
   'Kjøleskap': { temp: 4, h: 15 },
   'Isvann, uten salt': { temp: 0, h: 100 },
-  'Isvann + salt': { temp: -2, h: 250 },
+  'Isvann + salt': { temp: -10, h: 250 }, // rikelig grovsalt i isvann kommer typisk ned mot -5 til -10 °C
   'Fryser': { temp: -18, h: 18 },
   'Romtemperatur': { temp: 21, h: 10 },
 };
 
 const KJOLE_BEHOLDERE = {
   'Standard bordeauxflaske': { r: 0.038, vegg: 0.003, k: 1.0 },
+  'Burgunderflaske (Pinot Noir/Chardonnay)': { r: 0.0415, vegg: 0.0035, k: 1.0 },
   'Slank flaske (Riesling/Alsace)': { r: 0.035, vegg: 0.003, k: 1.0 },
   'Champagne/musserende': { r: 0.044, vegg: 0.005, k: 1.0 },
   'Halvflaske 375ml': { r: 0.0325, vegg: 0.003, k: 1.0 },
@@ -26,14 +27,17 @@ const RHO_C = 4.18e6; // J/(m³K), vann/vin/brus
 // ---------- Data: Dekantering ----------
 
 const DEKANTERING_TABELL = {
-  'Ung, fyldig rødvin (Cabernet, Syrah, Bordeaux-blend)': { tid: '1–2 timer', notat: 'Grov tanning trenger tid/luft.' },
+  'Ung Nebbiolo (Barolo, Barbaresco)': { tid: '2–4 timer', notat: 'Høye tanniner og syre i ung tilstand — blant vinene som trenger mest luft.' },
+  'Ung, fyldig rødvin (Cabernet, Syrah, Bordeaux-blend)': { tid: '1–2 timer', notat: 'Kraftige tanniner trenger tid/luft.' },
+  'Ung Amarone/Ripasso': { tid: '1–2 timer', notat: 'Konsentrert og alkoholsterk — luft mykner den opp.' },
   'Middels rødvin (Merlot, Chianti, Rioja)': { tid: '30–60 min', notat: 'Åpner aromaer uten å flate ut.' },
   'Lett rødvin (Pinot Noir, Gamay)': { tid: '15–30 min, evt. rett i glass', notat: 'For mye luft kan svekke frukten.' },
   'Moden rødvin (10+ år)': { tid: '15–30 min, forsiktig', notat: 'Primært for sediment, ikke over-lufting.' },
   'Vintage Port': { tid: '2–3 timer', notat: 'Tungt sediment, hell forsiktig.' },
   'Fyldig hvitvin (moden Chardonnay)': { tid: '10–15 min', notat: 'Kan myke opp oksidativ stil.' },
+  'Reduktiv hvitvin (fatlagret hvit Bourgogne, naturvin uten svovel)': { tid: '15–30 min', notat: 'Kan ha et forbigående fyrstikk-/svovelpreg fra gjæringen — i motsetning til de fleste hvitviner er lufting her ofte nyttig.' },
   'Lett hvitvin/rosé': { tid: 'Vanligvis ikke nødvendig', notat: 'Server rett fra flaske.' },
-  'Musserende': { tid: 'Aldri', notat: 'Fjerner boblene.' },
+  'Musserende': { tid: 'Normalt ikke nødvendig', notat: 'Fjerner boblene — unntaket er noen ganger en ung, kraftig årgangs- eller prestisjechampagne, der en kort dekantering kan dempe en aggressiv mousse. Moden/gammel champagne er derimot skjør og bør som regel serveres rett fra flaska.' },
 };
 
 // ---------- Felles hjelpefunksjoner ----------
@@ -290,7 +294,7 @@ function festMarkup() {
 
       <div id="fest-resultat-plass"></div>
 
-      <p class="hjelpetekst">Antar 150 ml per glass, ca. 5 glass per 750 ml-flaske.</p>
+      <p class="hjelpetekst">Antar 150 ml per glass, ca. 5 glass per 750 ml-flaske — gjelder vanlig vinservering. Musserende og dessertvin skjenkes i mindre glass (musserende ca. 6–8 glass per flaske, dessertvin ca. 10–15), så regn med færre flasker for de kategoriene. Kjøp gjerne 10–15 % ekstra som buffer.</p>
     </section>
   `;
 }

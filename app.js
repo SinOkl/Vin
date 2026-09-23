@@ -11,33 +11,41 @@ import { FaktaDB, POOL_STORRELSE } from './fakta-db.js';
 const KATEGORIER = ['Vin', 'Brennevin'];
 
 const TYPER = {
-  'Vin': ['Rødvin', 'Sider', 'Hvitvin', 'Rosévin', 'Musserende', 'Dessertvin/Portvin', 'Annet'],
+  'Vin': ['Rødvin', 'Sider', 'Hvitvin', 'Rosévin', 'Musserende', 'Dessertvin/Portvin', 'Sherry', 'Annet'],
   'Brennevin': ['Whisky', 'Vodka', 'Gin', 'Rom', 'Cognac/Brandy', 'Akevitt', 'Tequila', 'Likør', 'Annet'],
 };
 
+// «Hvit ost» var tvetydig (hvitost eller hvitmuggost?) og er splittet i to. Eldre lagrede poster
+// som har den gamle verdien i matparKategorier, vises fortsatt som tag på detaljsiden — de
+// treffer bare ikke lenger filteret/avkrysningsboksene, siden verdien ikke lenger finnes i listen.
 const MATPAR_KATEGORIER = [
-  'Rødt kjøtt', 'Lyst kjøtt/fjørfe', 'Vilt', 'Fisk', 'Skalldyr',
-  'Hvit ost', 'Blåmuggost/Brunost', 'Pasta/tomatbasert', 'Asiatisk/krydret',
-  'Vegetar', 'Dessert/søtt', 'Aperitif/forrett',
+  'Rødt kjøtt', 'Lyst kjøtt/fjørfe', 'Vilt', 'Fisk', 'Skalldyr', 'Sushi/rå fisk',
+  'Fast/lagret ost', 'Hvitmuggost', 'Blåmuggost/Brunost', 'Spekemat/charcuteri', 'Grillet/røkt',
+  'Pasta/tomatbasert', 'Asiatisk/krydret', 'Vegetar', 'Dessert/søtt', 'Sjokolade/kaffe', 'Aperitif/forrett',
 ];
 
+// Lagringstemperatur er for stillevin (rødvin/hvitvin/rosé) i praksis den samme, ca. 12–14 °C —
+// det er bare serveringstemperaturen som skal variere. Musserende lagres tradisjonelt litt
+// kjøligere. Innenfor flere typer er spennet i stil (lett vs. fyldig) større enn forskjellen
+// mellom typene; notatene nevner dette der det slår mest ut.
 const LAGRINGSFORSLAG = {
   'Vin': {
-    'Rødvin': { temp: '12–16 °C', servering: '16–18 °C', fuktighet: '60–70 %', notat: 'Liggende, mørkt og vibrasjonsfritt. Jevn temperatur er viktigere enn eksakt tall.' },
+    'Rødvin': { temp: '12–14 °C', servering: '16–18 °C', fuktighet: '60–70 %', notat: 'Liggende, mørkt og vibrasjonsfritt. Jevn temperatur er viktigere enn eksakt tall. Lette stiler (Beaujolais, kjølig Pinot Noir) er bedre med 12–15 °C — sett flasken i kjøleskapet 20 minutter før servering.' },
     'Sider': { temp: '8–12 °C', servering: '6–8 °C', fuktighet: '60–70 %', notat: 'Drikkes normalt ung og fersk, som rosévin — ikke beregnet for lang lagring. Server godt avkjølt, gjerne stående i kjøleskap rett før servering.' },
-    'Hvitvin': { temp: '8–12 °C', servering: '8–10 °C', fuktighet: '60–70 %', notat: 'Liggende, mørkt. Kjøligere enn rødvin — bruk kjøleskap rett før servering.' },
-    'Rosévin': { temp: '8–10 °C', servering: '8–10 °C', fuktighet: '60–70 %', notat: 'Drikkes normalt ung og fersk — ikke beregnet for lang lagring.' },
-    'Musserende': { temp: '6–8 °C', servering: '6–8 °C', fuktighet: '60–70 %', notat: 'Stående eller liggende er begge greit. De fleste bør drikkes innen 1–3 år, årgangschampagne tåler mer.' },
-    'Dessertvin/Portvin': { temp: '12–16 °C', servering: '10–14 °C', fuktighet: '60–70 %', notat: 'Tåler ofte lang lagring ubrutt. Når flasken er åpnet: drikk portvin i løpet av uker, søt dessertvin i løpet av dager-uker (kjølig og korket).' },
+    'Hvitvin': { temp: '12–14 °C', servering: '8–10 °C', fuktighet: '60–70 %', notat: 'Liggende, mørkt — lagres på samme temperatur som rødvin, det er bare serveringen som er kjøligere. Fyldig eller moden hvitvin (fatlagret Chardonnay, moden Riesling) er bedre med litt varmere servering, 10–13 °C.' },
+    'Rosévin': { temp: '12–14 °C', servering: '8–10 °C', fuktighet: '60–70 %', notat: 'Drikkes normalt ung og fersk — ikke beregnet for lang lagring.' },
+    'Musserende': { temp: '10–12 °C', servering: '8–10 °C', fuktighet: '60–70 %', notat: 'Litt kjøligere enn stillevin er vanlig for lengre lagring. Stående er greit en kortere periode, men liggende er tryggest over flere år. Server årgang, rosé og prestisjecuvée noe varmere, 10–12 °C. De fleste bør drikkes innen 1–3 år, årgangschampagne tåler mer.' },
+    'Dessertvin/Portvin': { temp: '12–16 °C', servering: '8–18 °C (avhenger av type)', fuktighet: '60–70 %', notat: 'Tåler ofte lang lagring ubrutt. Server søt hvitvin (Sauternes) 8–10 °C, tawny/annen hetvin 12–14 °C og årgangsport/LBV 15–18 °C. Etter åpning: årgangsport bør drikkes i løpet av 3–4 dager, andre typer holder gjerne uker (kjølig og korket).' },
+    'Sherry': { temp: '12–14 °C', servering: '6–14 °C (avhenger av type)', fuktighet: '60–70 %', notat: 'Stående (mindre vinflate mot luft enn liggende), kjølig og mørkt. Fino og manzanilla er nærmest en lett hvitvin: bør drikkes friskt (innen 12–18 måneder etter tapping selv uåpnet), serveres kjølig (6–8 °C) og drikkes opp i løpet av 3–5 dager i kjøleskap etter åpning. Oloroso, amontillado og Pedro Ximénez tåler mer luft og holder uker i kjøleskap — server disse 12–14 °C.' },
     'Annet': { temp: '10–14 °C', servering: '12–16 °C', fuktighet: '60–70 %', notat: 'Generelt egnet lagringsklima for de fleste viner.' },
   },
   'Brennevin': {
-    'Whisky': { temp: '15–20 °C', servering: '18–20 °C (evt. med en isbit)', fuktighet: '', notat: 'Oppbevares stående, i motsetning til vin — liggende kan skade korken. Romtemperatur og unna sollys holder svært lenge, også etter åpning.' },
-    'Vodka': { temp: '15–20 °C', servering: '−18–0 °C (gjerne fryser)', fuktighet: '', notat: 'Stående, tåler romtemperatur uten problem. Kald servering demper alkoholbrennet.' },
+    'Whisky': { temp: '15–20 °C', servering: '18–20 °C (evt. med en isbit)', fuktighet: '', notat: 'Oppbevares stående, i motsetning til vin — liggende kan skade korken. Romtemperatur og unna sollys holder svært lenge når flasken er godt fylt.' },
+    'Vodka': { temp: '15–20 °C', servering: '−18–0 °C (gjerne fryser)', fuktighet: '', notat: 'Stående, tåler romtemperatur uten problem. Kald servering demper alkoholbrennet — for håndverksvodka der korn-/potetkarakteren skal fram, foretrekker mange heller 8–10 °C.' },
     'Gin': { temp: '15–20 °C', servering: '4–10 °C', fuktighet: '', notat: 'Stående, romtemperatur. Serveres gjerne godt avkjølt eller i en cocktail.' },
     'Rom': { temp: '15–20 °C', servering: '18–20 °C', fuktighet: '', notat: 'Stående, romtemperatur og unna sollys. Lysere rom-typer kan gjerne kjøles noe før servering.' },
-    'Cognac/Brandy': { temp: '15–20 °C', servering: '18–22 °C', fuktighet: '', notat: 'Stående, romtemperatur. Server gjerne i et konjakkglass slik at aromaene får utfolde seg.' },
-    'Akevitt': { temp: '12–18 °C', servering: '4–8 °C', fuktighet: '', notat: 'Stående, kjølig og mørkt. Tradisjonelt servert godt avkjølt.' },
+    'Cognac/Brandy': { temp: '15–20 °C', servering: '18–22 °C', fuktighet: '', notat: 'Stående, romtemperatur. Et tulipanformet glass åpner aromaene bedre enn den klassiske store ballongen, som konsentrerer alkoholdampen.' },
+    'Akevitt': { temp: '12–18 °C', servering: '12–20 °C (avhenger av type)', fuktighet: '', notat: 'Stående, kjølig og mørkt. Fatlagret (brun) akevitt er best rundt 18–20 °C, altså romtemperatur — kald servering (tradisjonelt 4–8 °C) lukker aromaene. Klar akevitt kan gjerne serveres litt kjøligere, 12–16 °C.' },
     'Tequila': { temp: '15–20 °C', servering: '8–16 °C (avhenger av type)', fuktighet: '', notat: 'Stående, romtemperatur. Blanco/sølv serveres kjøligere enn eldre reposado/añejo.' },
     'Likør': { temp: '12–18 °C', servering: '6–10 °C', fuktighet: '', notat: 'Stående. Kremlikører bør gjerne kjøles i kjøleskap etter åpning og drikkes opp i løpet av noen måneder.' },
     'Annet': { temp: '15–20 °C', servering: '10–18 °C', fuktighet: '', notat: 'Generelt: stående, romtemperatur og unna sollys holder de fleste typer brennevin svært lenge.' },
@@ -58,6 +66,7 @@ const TYPE_FARGE = {
   'Rosévin': '#e2a1a6',
   'Musserende': '#d9c46a',
   'Dessertvin/Portvin': '#5a1f22',
+  'Sherry': '#a9762f',
   'Whisky': '#b5762a',
   'Vodka': '#c7d3d6',
   'Gin': '#8fae8f',
@@ -154,6 +163,7 @@ const KATEGORI_IKON_BYGGER = {
   'Hvitvin': (f) => vinglassSvg(f, 30),
   'Rosévin': (f) => vinglassSvg(f, 30),
   'Dessertvin/Portvin': (f) => vinglassSvg(f, 38),
+  'Sherry': (f) => vinglassSvg(f, 40),
   'Musserende': (f) => fluteSvg(f),
   'Whisky': (f) => tumblerSvg(f, true),
   'Rom': (f) => tumblerSvg(f, false),
@@ -214,7 +224,7 @@ const AI_JSON_SKJEMA_OG_REGLER = `{
   "druer": "",
   "drikkeklarFra": "",
   "drikkeklarTil": "",
-  "matparKategorier": ["velg fritt blant: Rødt kjøtt, Lyst kjøtt/fjørfe, Vilt, Fisk, Skalldyr, Hvit ost, Blåmuggost/Brunost, Pasta/tomatbasert, Asiatisk/krydret, Vegetar, Dessert/søtt, Aperitif/forrett"],
+  "matparKategorier": ["maks 4, viktigste først — velg fritt blant: Rødt kjøtt, Lyst kjøtt/fjørfe, Vilt, Fisk, Skalldyr, Sushi/rå fisk, Fast/lagret ost, Hvitmuggost, Blåmuggost/Brunost, Spekemat/charcuteri, Grillet/røkt, Pasta/tomatbasert, Asiatisk/krydret, Vegetar, Dessert/søtt, Sjokolade/kaffe, Aperitif/forrett"],
   "matparNotater": "",
   "smaksnotater": "",
   "lagringstemperatur": "",
@@ -226,10 +236,12 @@ const AI_JSON_SKJEMA_OG_REGLER = `{
 Regler:
 - Bruk kun feltnavnene over, ikke legg til andre.
 - "kategori" må være "Vin" eller "Brennevin".
-- Hvis kategori er "Vin": "type" må være én av: Rødvin, Sider, Hvitvin, Rosévin, Musserende, Dessertvin/Portvin, Annet.
+- Hvis kategori er "Vin": "type" må være én av: Rødvin, Sider, Hvitvin, Rosévin, Musserende, Dessertvin/Portvin, Sherry, Annet.
 - Hvis kategori er "Brennevin": "type" må være én av: Whisky, Vodka, Gin, Rom, Cognac/Brandy, Akevitt, Tequila, Likør, Annet.
-- "matparKategorier" må kun inneholde verdier fra listen over, som en JSON-liste.
-- "lagringstemperatur" er hvor kaldt flasken bør oppbevares over tid, "serveringstemperatur" er hvor kald den bør være når den drikkes — disse er ofte ulike, ikke forveksle dem.
+- "argang" er høstår for vin. For brennevin med en faktisk oppgitt årgang: for vintage cognac/armagnac er det druenes høstår (samme betydning som for vin), for single cask-whisky er det destillasjonsåret. For produkter uten årgang (NV-champagne, de fleste sherry og annet brennevin) skal feltet stå tomt ("") — ikke gjett et år.
+- "drikkeklarFra"/"drikkeklarTil": for vin, angi et vindu selv om vinen skal drikkes ung og ikke lagres (f.eks. "drikkeklarFra" = innkjøpsår, "drikkeklarTil" = et par år fram) — dette brukes til å varsle om den bør drikkes snart, ikke bare til å vise et modningspotensial. Er kategori "Brennevin", skal begge stå tomt ("") — destillater endrer seg ikke i flasken.
+- "matparKategorier" må kun inneholde verdier fra listen over, som en JSON-liste, maks 4 stykker, viktigste først.
+- "lagringstemperatur" er hvor kaldt flasken bør oppbevares over tid, "serveringstemperatur" er hvor kald den bør være når den drikkes — disse er ofte ulike, ikke forveksle dem. Oppgi alltid grader Celsius (°C), aldri Fahrenheit, som ett tall eller et intervall (f.eks. "16–18 °C").
 - "innkjopspris" er prisen PER FLASKE i kroner. Søk ALLTID opp produktet på vinmonopolet.no og bruk utsalgsprisen derfra — ikke la dette feltet stå tomt bare fordi prisen ikke står på etiketten. Oppgir jeg selv en annen pris i meldingen (f.eks. faktisk betalt pris, tilbud, eller kjøpt i utlandet), bruk min pris i stedet for Vinmonopolet sin. Finner du ikke produktet på Vinmonopolet i det hele tatt, skriv "" — ikke gjett et tall.
 - Bruk nettsøk til å dobbeltsjekke fakta om produktet (druer, region, drikkevindu, smaksprofil, pris) fremfor å basere deg kun på synlig tekst på etiketten — det gir mer presise svar.`;
 
@@ -293,6 +305,9 @@ function beregnStats(liste) {
 }
 
 function drikkestatus(vin) {
+  // Brennevin/destillater modnes ikke videre på flaske, så «drikkevindu» er ikke et meningsfullt
+  // begrep for dem — «Ukjent vindu» ville feilaktig antydet at det er noe å vente på eller sjekke.
+  if (vin.kategori === 'Brennevin') return { label: 'Ikke aktuelt (brennevin)', klasse: 'status-ukjent' };
   const ar = dataArsnr();
   const fra = vin.drikkeklarFra ? Number(vin.drikkeklarFra) : null;
   const til = vin.drikkeklarTil ? Number(vin.drikkeklarTil) : null;
@@ -433,8 +448,10 @@ function normaliserImportertVin(raw) {
     lagringstemperatur: tekstEllerTom(raw.lagringstemperatur),
     lagringsfuktighet: tekstEllerTom(raw.lagringsfuktighet),
     serveringstemperatur: tekstEllerTom(raw.serveringstemperatur),
-    drikkeklarFra: tallEllerTom(raw.drikkeklarFra ?? raw.drinkFrom),
-    drikkeklarTil: tallEllerTom(raw.drikkeklarTil ?? raw.drinkUntil),
+    // Drikkevindu gjelder ikke brennevin — tøm feltene uansett hva AI-en måtte ha svart,
+    // som en ekstra sikring utover instruksen i AI_JSON_SKJEMA_OG_REGLER.
+    drikkeklarFra: kategori === 'Brennevin' ? '' : tallEllerTom(raw.drikkeklarFra ?? raw.drinkFrom),
+    drikkeklarTil: kategori === 'Brennevin' ? '' : tallEllerTom(raw.drikkeklarTil ?? raw.drinkUntil),
     matparKategorier: matpar,
     matparNotater: tekstEllerTom(raw.matparNotater),
     smaksnotater: tekstEllerTom(raw.smaksnotater),
@@ -1231,6 +1248,12 @@ function visDetalj(id) {
   const erBrennevin = kategori === 'Brennevin';
   const status = drikkestatus(v);
   const forslag = hentForslag(kategori, v.type);
+  // Whisky (og lignende) «holder svært lenge» gjelder en full/halvfull flaske — under ca. en
+  // tredjedel fylde akselererer oksidasjonen merkbart, siden mer luft har fått plass i flasken.
+  const fyllnivaForNotat = erBrennevin ? hentFyllniva(v) : 100;
+  const forslagNotat = erBrennevin && fyllnivaForNotat < 33
+    ? `${forslag.notat} NB: flasken er under en tredjedel full — da går oksidasjonen raskere, så smaken kan endre seg i løpet av måneder selv om den «holder svært lenge» ved høyere fyllnivå.`
+    : forslag.notat;
   const verdiTotal = vinVerdi(v);
   const fyllnivaForVerdi = hentFyllniva(v);
   const verdiForklaring = erBrennevin && fyllnivaForVerdi < 100 && (Number(v.antallFlasker) || 0) > 0
@@ -1301,11 +1324,11 @@ function visDetalj(id) {
           ${dRad('Lagringstemperatur', v.lagringstemperatur || forslag.temp)}
           ${dRad('Fuktighet', v.lagringsfuktighet || forslag.fuktighet)}
           ${dRad('Serveringstemperatur', v.serveringstemperatur || forslag.servering)}
-          ${dRad('Drikkeklar fra', v.drikkeklarFra)}
-          ${dRad('Siste år', v.drikkeklarTil)}
+          ${!erBrennevin ? dRad('Drikkeklar fra', v.drikkeklarFra) : ''}
+          ${!erBrennevin ? dRad('Siste år', v.drikkeklarTil) : ''}
         </dl>
-        <p class="hjelpetekst">💡 ${escapeHtml(forslag.notat)}</p>
-        ${v.drikkeklarKilde === 'ai' ? `<p class="hjelpetekst">🤖 Drikkevinduet er et AI-generert estimat${v.aiToppAr ? `, med antatt toppår ${escapeHtml(v.aiToppAr)}` : ''}${v.aiKonfidens ? ` (sikkerhet: ${escapeHtml(v.aiKonfidens)})` : ''}.${v.aiBegrunnelse ? ` ${escapeHtml(v.aiBegrunnelse)}` : ''}</p>` : ''}
+        <p class="hjelpetekst">💡 ${escapeHtml(forslagNotat)}</p>
+        ${!erBrennevin && v.drikkeklarKilde === 'ai' ? `<p class="hjelpetekst">🤖 Drikkevinduet er et AI-generert estimat${v.aiToppAr ? `, med antatt toppår ${escapeHtml(v.aiToppAr)}` : ''}${v.aiKonfidens ? ` (sikkerhet: ${escapeHtml(v.aiKonfidens)})` : ''}.${v.aiBegrunnelse ? ` ${escapeHtml(v.aiBegrunnelse)}` : ''}</p>` : ''}
       </section>
 
       <section class="detaljseksjon">
@@ -1407,6 +1430,10 @@ function byttKategoriISkjema(skjema, kategori, forhandsvalgtType) {
 
   const fyllnivaRad = document.getElementById('fyllniva-rad-skjema');
   if (fyllnivaRad) fyllnivaRad.style.display = kategori === 'Brennevin' ? '' : 'none';
+
+  // Drikkevindu er ikke meningsfullt for brennevin (destillater endrer seg ikke i flasken).
+  const drikkeklarRad = document.getElementById('drikkeklar-rad-skjema');
+  if (drikkeklarRad) drikkeklarRad.style.display = kategori === 'Brennevin' ? 'none' : '';
 
   const typer = TYPER[kategori] || TYPER['Vin'];
   const valgtType = typer.includes(forhandsvalgtType) ? forhandsvalgtType : typer[0];
@@ -1754,7 +1781,7 @@ function visSkjema(id, forhandsvalgtKategori) {
           <label>Fuktighet<input name="lagringsfuktighet" id="fukt-felt" placeholder="${forslagStart.fuktighet || ''}" value="${escapeHtml(v.lagringsfuktighet)}"></label>
         </div>
         <label>Serveringstemperatur<input name="serveringstemperatur" id="serve-felt" placeholder="${forslagStart.servering || ''}" value="${escapeHtml(v.serveringstemperatur)}"></label>
-        <div class="to-kolonner">
+        <div class="to-kolonner" id="drikkeklar-rad-skjema" style="${vKategori === 'Brennevin' ? 'display:none' : ''}">
           <label>Drikkeklar fra (år)<input type="number" name="drikkeklarFra" value="${escapeHtml(v.drikkeklarFra)}"></label>
           <label>Siste år<input type="number" name="drikkeklarTil" value="${escapeHtml(v.drikkeklarTil)}"></label>
         </div>
@@ -1929,8 +1956,10 @@ function visSkjema(id, forhandsvalgtKategori) {
         lagringstemperatur: fd.get('lagringstemperatur').trim(),
         lagringsfuktighet: fd.get('lagringsfuktighet').trim(),
         serveringstemperatur: fd.get('serveringstemperatur').trim(),
-        drikkeklarFra: fd.get('drikkeklarFra') ? Number(fd.get('drikkeklarFra')) : '',
-        drikkeklarTil: fd.get('drikkeklarTil') ? Number(fd.get('drikkeklarTil')) : '',
+        // Feltene er skjult (men fortsatt i DOM-en) for Brennevin — tøm dem eksplisitt i stedet for
+        // å ta vare på en verdi fra før et ev. kategoribytte, siden drikkevindu ikke gjelder destillater.
+        drikkeklarFra: kategoriValgt !== 'Brennevin' && fd.get('drikkeklarFra') ? Number(fd.get('drikkeklarFra')) : '',
+        drikkeklarTil: kategoriValgt !== 'Brennevin' && fd.get('drikkeklarTil') ? Number(fd.get('drikkeklarTil')) : '',
         matparKategorier,
         matparNotater: fd.get('matparNotater').trim(),
         smaksnotater: fd.get('smaksnotater').trim(),

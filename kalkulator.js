@@ -136,45 +136,6 @@ function kjoletidMarkup() {
   `;
 }
 
-// .ics med en VALARM satt til PT0M (utløses nøyaktig ved starttidspunktet) — i motsetning
-// til Google Kalenders "quick add"-lenke (som bruker brukerens standard-påminnelse, typisk
-// 10–30 min FØR hendelsen) treffer dette varselet nøyaktig når kjøletiden er ferdig, og
-// fungerer likt på Android og iPhone siden det ikke er avhengig av intent:-lenker.
-function lastNedKalenderPaaminnelse(minutter) {
-  const start = new Date(Date.now() + minutter * 60000);
-  const slutt = new Date(start.getTime() + 5 * 60000);
-  const formatIcs = (d) => `${d.toISOString().replace(/[-:]/g, '').split('.')[0]}Z`;
-  const ics = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Vinkjelleren//Kjoletid//NO',
-    'BEGIN:VEVENT',
-    `UID:vinkjeller-kjoletid-${Date.now()}@vinkjelleren`,
-    `DTSTAMP:${formatIcs(new Date())}`,
-    `DTSTART:${formatIcs(start)}`,
-    `DTEND:${formatIcs(slutt)}`,
-    'SUMMARY:🌡️ Kjøletiden er ferdig',
-    'DESCRIPTION:Flasken/boksen skal nå ha nådd ønsket temperatur — satt fra Vinkjelleren.',
-    'BEGIN:VALARM',
-    'ACTION:DISPLAY',
-    'DESCRIPTION:Kjøletiden er ferdig',
-    'TRIGGER:PT0M',
-    'END:VALARM',
-    'END:VEVENT',
-    'END:VCALENDAR',
-  ].join('\r\n');
-
-  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const lenke = document.createElement('a');
-  lenke.href = url;
-  lenke.download = 'kjoletid-paaminnelse.ics';
-  document.body.appendChild(lenke);
-  lenke.click();
-  lenke.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 function kobleKjoletid() {
   const startSlider = document.getElementById('kjole-start-slider');
   const malSlider = document.getElementById('kjole-mal-slider');
@@ -214,21 +175,12 @@ function kobleKjoletid() {
         <span class="statlabel">estimert ${retning}</span>
       </div>
       <p class="hjelpetekst">Estimatet er mer usikkert tidlig i forløpet enn mot slutten — modellen antar jevn temperatur i hele væsken.</p>
-      <button type="button" class="knapp knapp-primaer" id="kjole-timer-knapp" data-minutter="${midtMinutter}">📅 Last ned kalenderpåminnelse (${formaterMinutter(midtMinutter)})</button>
-      <p class="hjelpetekst" id="kjole-timer-tekst"></p>
+      <p class="hjelpetekst">⏲️ Sett en tidtaker på telefonen på <strong>${formaterMinutter(midtMinutter)}</strong> — appen varsler deg ikke selv.</p>
     `;
   }
 
   [startSlider, malSlider, miljoSelect, beholderSelect, kalibreringSlider].forEach((elm) => {
     elm.addEventListener('input', oppdater);
-  });
-  resultatPlass.addEventListener('click', (e) => {
-    const knapp = e.target.closest('#kjole-timer-knapp');
-    if (!knapp) return;
-    const minutter = Number(knapp.dataset.minutter);
-    lastNedKalenderPaaminnelse(minutter);
-    document.getElementById('kjole-timer-tekst').textContent =
-      `Lastet ned en kalenderpåminnelse satt til om ${formaterMinutter(minutter)} — åpne filen (fra nedlastingene/varselet) for å legge den inn i kalenderen din.`;
   });
   oppdater();
 }

@@ -492,15 +492,22 @@ textarea { min-height: 70px; resize: vertical; }
   object-fit: cover;
 }
 
+/* overflow: hidden klipper rammens mørklegging (box-shadow 999px) til selve kamerafeltet,
+   så overskrift og knapper rundt ikke blir mørke. */
 .kamera-boks {
   position: relative;
+  overflow: hidden;
+  border-radius: var(--radius);
+  margin-bottom: 8px;
 }
 
-/* Bilde-steget har en ekstra knapperad («Legg til manuelt») under lukkerknappen — video-
-   forhåndsvisningen kuttes litt lavere enn skanne-stegets enn så alt får plass uten scrolling. */
+/* Kamera med ramme (bilde- og skanne-steget): forhåndsvisningen holdes lav nok til at
+   knappene under får plass uten scrolling. Blokkvisning og null marg gjør at boksen er
+   nøyaktig like stor som videoen, så rammen står midt på den. */
 .kamera-boks .skann-video {
+  display: block;
   max-height: 44vh;
-  margin-bottom: 8px;
+  margin-bottom: 0;
 }
 
 .kamera-ramme {
@@ -514,6 +521,13 @@ textarea { min-height: 70px; resize: vertical; }
   border-radius: 12px;
   box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.4);
   pointer-events: none;
+}
+
+/* Skanne-steget: bred, lav ramme som viser hvor strekkoden bør ligge. Kun veiledning —
+   leseren i skann.js tolker fortsatt hele kamerabildet. */
+.kamera-ramme--strekkode {
+  width: 80%;
+  aspect-ratio: 5 / 2;
 }
 
 .lukker-rad {

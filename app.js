@@ -1522,8 +1522,8 @@ async function handterRegistrertEan(ean, bildeData) {
   location.hash = '#/ny';
 }
 
-// Steg 1: kamera rettet mot etiketten med en firkant-ramme som veiledning for hva som blir
-// synlig i appen. Går automatisk videre til strekkodeskanning når bildet er tatt (eller
+// Steg 1: kamera rettet mot etiketten med en firkant-ramme som viser nøyaktig hva som blir
+// med på bildet. Går automatisk videre til strekkodeskanning når bildet er tatt (eller
 // steget er hoppet over).
 function visRegistrer(forhandsvalgtKategori) {
   registrerBildeSteg(forhandsvalgtKategori);
@@ -1579,14 +1579,27 @@ function registrerBildeSteg(forhandsvalgtKategori) {
   });
 
   taKnapp.addEventListener('click', async () => {
-    // Beskjærer til samme høyreist 3:4-format som rammen på skjermen viser, slik at bildet
-    // som lagres faktisk matcher det brukeren ser — og passer bedre til en vinetikett enn
-    // hele (ofte bredere) kamerabildet.
-    const RAMME_ASPEKT = 3 / 4;
+    // Beskjærer til nøyaktig det som er innenfor rammen på skjermen, slik at bildet som lagres
+    // matcher det brukeren ser. Rammens skjermposisjon regnes om til piksler i kamerabildet:
+    // videoen vises med object-fit: cover, dvs. skalert til å fylle elementet med overskuddet
+    // kuttet likt på begge sider. Rammens kantlinje (clientLeft/clientTop) holdes utenfor.
+    const ramme = video.parentElement.querySelector('.kamera-ramme');
+    const vr = video.getBoundingClientRect();
+    const rr = ramme.getBoundingClientRect();
     const vb = video.videoWidth, vh = video.videoHeight;
-    let bredde = vb, hoyde = vb / RAMME_ASPEKT;
-    if (hoyde > vh) { hoyde = vh; bredde = vh * RAMME_ASPEKT; }
-    const sx = (vb - bredde) / 2, sy = (vh - hoyde) / 2;
+    if (!vb || !vh || !vr.width || !vr.height) return; // kameraet har ikke levert et bilde ennå
+    const skala = Math.max(vr.width / vb, vr.height / vh);
+    const kuttX = (vb * skala - vr.width) / 2;
+    const kuttY = (vh * skala - vr.height) / 2;
+    const innLeft = rr.left + ramme.clientLeft, innTop = rr.top + ramme.clientTop;
+    let sx = (innLeft - vr.left + kuttX) / skala;
+    let sy = (innTop - vr.top + kuttY) / skala;
+    let bredde = ramme.clientWidth / skala;
+    let hoyde = ramme.clientHeight / skala;
+    // Klem innenfor kamerabildet (rammen kan stikke utenfor videoen på svært lave skjermer)
+    sx = Math.max(0, sx); sy = Math.max(0, sy);
+    bredde = Math.round(Math.min(bredde, vb - sx));
+    hoyde = Math.round(Math.min(hoyde, vh - sy));
 
     const canvas = document.createElement('canvas');
     canvas.width = bredde;
@@ -1606,8 +1619,11 @@ function registrerSkannSteg(forhandsvalgtKategori, bildeData) {
     <div class="side">
       <h1>📷 Legg til ${ordKategori}</h1>
       ${bildeData ? `<img class="detaljbilde" src="${bildeData}" alt="Bilde av etiketten">` : ''}
-      <p class="hjelpetekst" id="skann-status">Skanner strekkode</p>
-      <video id="skann-video" class="skann-video" autoplay playsinline muted></video>
+      <p class="hjelpetekst" id="skann-status">Hold strekkoden inne i rammen</p>
+      <div class="kamera-boks">
+        <video id="skann-video" class="skann-video" autoplay playsinline muted></video>
+        <div class="kamera-ramme kamera-ramme--strekkode" aria-hidden="true"></div>
+      </div>
       <div class="knapperad">
         <button type="button" class="knapp" id="skann-hopp-knapp">Hopp over skanning</button>
       </div>

@@ -505,6 +505,8 @@ function normaliserBackupVin(raw) {
   vin.aiBegrunnelse = tekstEllerTom(raw.aiBegrunnelse);
   vin.aiKonfidens = tekstEllerTom(raw.aiKonfidens);
   vin.drikkeklarKilde = raw.drikkeklarKilde === 'ai' ? 'ai' : '';
+  const opprettet = tallEllerTom(raw.opprettet);
+  if (Number.isFinite(opprettet) && opprettet > 0) vin.opprettet = opprettet;
   const id = idTilBackup(raw.id);
   if (id) vin.id = id;
   return vin;
@@ -1129,11 +1131,73 @@ function listeKompakt(viner) {
 
 // ---------- Visning: Vinliste (delt mellom Vin og Brennevin) ----------
 
-let filterState = { sok: '', type: '', matpar: '', status: '', visning: 'kjeller', kategori: 'Vin' };
+let filterState = { sok: '', type: '', matpar: '', status: '', visning: 'kjeller', kategori: 'Vin', sortering: 'navn' };
+
+const SORTERINGER = [
+  { id: 'navn', label: 'Navn A–Å' },
+  { id: 'pris-lav', label: 'Pris, lav → høy' },
+  { id: 'pris-hoy', label: 'Pris, høy → lav' },
+  { id: 'argang-eldst', label: 'Årgang, eldst først' },
+  { id: 'argang-nyest', label: 'Årgang, nyest først' },
+  { id: 'drikkevindu', label: 'Drikkevindu (mest hastesak først)', kunVin: true },
+  { id: 'sist-lagt-til', label: 'Sist lagt til' },
+];
+
+const DRIKKESTATUS_RANG = { 'status-hastesak': 0, 'status-snart': 1, 'status-klar': 2, 'status-venter': 3, 'status-ukjent': 4 };
+
+function sorteringerForKategori(kategori) {
+  return SORTERINGER.filter((s) => !(s.kunVin && kategori === 'Brennevin'));
+}
+
+// Poster uten verdi for sorteringsnøkkelen havner alltid nederst, uansett retning.
+function sorterListe(liste, sortering) {
+  const tallEllerNull = (x) => {
+    const n = parseInt(x, 10);
+    return Number.isFinite(n) ? n : null;
+  };
+  const etterNavn = (a, b) => (a.navn || '').localeCompare(b.navn || '', 'nb');
+  const medNokkel = (nokkel, retning) => (a, b) => {
+    const na = nokkel(a);
+    const nb = nokkel(b);
+    if (na === null && nb === null) return etterNavn(a, b);
+    if (na === null) return 1;
+    if (nb === null) return -1;
+    return (na - nb) * retning || etterNavn(a, b);
+  };
+  // 0 og tom regnes begge som «ukjent pris» (samme som kortet, som ikke viser 0 kr).
+  const pris = (v) => (Number(v.innkjopspris) > 0 ? Number(v.innkjopspris) : null);
+  // «Sist lagt til»: nye poster har `opprettet`; eldre faller tilbake på innkjøpsdato (YYYY-MM-DD).
+  const lagtTil = (v) => {
+    if (typeof v.opprettet === 'number') return v.opprettet;
+    const t = Date.parse(v.innkjopsdato || '');
+    return Number.isFinite(t) ? t : null;
+  };
+  switch (sortering) {
+    case 'pris-lav': return liste.sort(medNokkel(pris, 1));
+    case 'pris-hoy': return liste.sort(medNokkel(pris, -1));
+    case 'argang-eldst': return liste.sort(medNokkel((v) => tallEllerNull(v.argang), 1));
+    case 'argang-nyest': return liste.sort(medNokkel((v) => tallEllerNull(v.argang), -1));
+    case 'sist-lagt-til': return liste.sort(medNokkel(lagtTil, -1));
+    case 'drikkevindu':
+      return liste.sort((a, b) => {
+        const ra = DRIKKESTATUS_RANG[drikkestatus(a).klasse] ?? 4;
+        const rb = DRIKKESTATUS_RANG[drikkestatus(b).klasse] ?? 4;
+        if (ra !== rb) return ra - rb;
+        const ta = tallEllerNull(a.drikkeklarTil) ?? tallEllerNull(a.drikkeklarFra);
+        const tb = tallEllerNull(b.drikkeklarTil) ?? tallEllerNull(b.drikkeklarFra);
+        if (ta !== tb) return ta === null ? 1 : tb === null ? -1 : ta - tb;
+        return etterNavn(a, b);
+      });
+    default: return liste.sort(etterNavn);
+  }
+}
 
 function visVinliste(kategori) {
   if (kategori) {
-    if (kategori !== filterState.kategori) filterState.type = '';
+    if (kategori !== filterState.kategori) {
+      filterState.type = '';
+      if (kategori === 'Brennevin' && filterState.sortering === 'drikkevindu') filterState.sortering = 'navn';
+    }
     filterState.kategori = kategori;
   }
   const erBrennevin = filterState.kategori === 'Brennevin';
@@ -1168,6 +1232,9 @@ function visVinliste(kategori) {
             <option value="status-venter" ${filterState.status === 'status-venter' ? 'selected' : ''}>Ikke klar ennå</option>
           </select>
         </div>
+        <select id="sortering" aria-label="Sorter" ${filterState.visning === 'drukket' ? 'disabled' : ''}>
+          ${sorteringerForKategori(filterState.kategori).map((s) => `<option value="${s.id}" ${filterState.sortering === s.id ? 'selected' : ''}>Sorter: ${s.label}</option>`).join('')}
+        </select>
       </div>
       <div id="vinliste-resultat"></div>
     </div>
@@ -1178,6 +1245,7 @@ function visVinliste(kategori) {
   document.getElementById('filter-type').addEventListener('change', (e) => { filterState.type = e.target.value; renderVinlisteResultat(); });
   document.getElementById('filter-matpar').addEventListener('change', (e) => { filterState.matpar = e.target.value; renderVinlisteResultat(); });
   document.getElementById('filter-status').addEventListener('change', (e) => { filterState.status = e.target.value; renderVinlisteResultat(); });
+  document.getElementById('sortering').addEventListener('change', (e) => { filterState.sortering = e.target.value; renderVinlisteResultat(); });
   document.getElementById('knapp-kjeller').addEventListener('click', () => bytVisning('kjeller'));
   document.getElementById('knapp-drukket').addEventListener('click', () => bytVisning('drukket'));
 
@@ -1207,6 +1275,8 @@ function renderVinlisteResultat() {
 
   if (filterState.visning === 'drukket') {
     filtrert.sort((a, b) => (b.drukketDato || '').localeCompare(a.drukketDato || ''));
+  } else {
+    sorterListe(filtrert, filterState.sortering);
   }
 
   if (!filtrert.length) {
@@ -1225,13 +1295,14 @@ function vinkortHtml(v) {
   const fyllniva = hentFyllniva(v);
   const visFyllniva = v.kategori === 'Brennevin' && !v.drukketDato && fyllniva < 100;
   const bilde = gyldigBilde(v.bilde);
+  const pris = Number(v.innkjopspris) > 0 ? Number(v.innkjopspris) : 0; // per flaske
   return `
     <a class="vinkort ${v.drukketDato ? 'drukket' : ''}" href="#/vin/${escapeHtml(v.id)}">
       <div class="vinkort-bilde">${bilde ? `<img src="${bilde}" alt="">` : flaskeIkonSvg(v.kategori, v.type)}</div>
       <div class="vinkort-info">
         <div class="vinkort-navn">${escapeHtml(v.navn)}${v.argang ? ` <span class="argang">${escapeHtml(v.argang)}</span>` : ''}</div>
         <div class="vinkort-detalj">${escapeHtml(v.produsent || '')}${v.type ? ' · ' + escapeHtml(v.type) : ''}</div>
-        <div class="vinkort-detalj">${Number(v.antallFlasker) || 0} flaske(r)${v.land ? ' · ' + escapeHtml(v.land) : ''}</div>
+        <div class="vinkort-detalj">${Number(v.antallFlasker) || 0} flaske(r)${v.land ? ' · ' + escapeHtml(v.land) : ''}${pris ? ` · <span class="vinkort-pris">${formatKr(pris)}</span>` : ''}</div>
         ${visFyllniva ? `<div class="fyllniva-bar-liten" title="${fyllniva}% igjen"><div class="fyllniva-bar-indre" style="width:${fyllniva}%"></div></div>` : ''}
         ${badge}
       </div>

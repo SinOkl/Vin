@@ -387,7 +387,9 @@ textarea { min-height: 70px; resize: vertical; }
 .vinkort-info { flex: 1; min-width: 0; }
 .vinkort-navn { font-weight: 600; }
 .vinkort-detalj { font-size: 0.8rem; color: var(--tekst-lys); }
+.vinkort-pris { font-weight: 600; color: var(--tekst); white-space: nowrap; }
 .argang { color: var(--gull); font-weight: 600; }
+#sortering { width: 100%; margin-top: 6px; }
 
 .fyllniva-bar-liten {
   width: 100%;

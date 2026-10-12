@@ -2,7 +2,8 @@
 // flere personer kan dele samme kjeller. Modell:
 //   invitasjoner/{inviteKode}           { kjellerId } — kun oppslåbar med eksakt kode, aldri listbar
 //   kjellere/{kjellerId}                { navn, eierUid, inviteKode, medlemmer: [uid, ...], opprettet }
-//   kjellere/{kjellerId}/viner/{vinId}   selve vin-/brennevindataen
+//   kjellere/{kjellerId}/viner/{vinId}   selve vin-/brennevindataen. `opprettet` settes som
+//                                       serverTimestamp ved ny post (leses ut som ms; eldre poster mangler det)
 //   produkter/{ean}                     delt strekkode-cache (produktfakta, ikke kjeller-spesifikk)
 //   brukere/{uid}                       { navn, epost, foto, status: 'ventende'|'godkjent'|'avvist', opprettet }
 //   faktafremdrift/{uid}                fremdrift i dagens fakta per bruker (se fakta-db.js)
@@ -107,12 +108,27 @@ function vinerCollection(kjellerId) {
   return collection(db, 'kjellere', kjellerId, 'viner');
 }
 
+// `opprettet` lagres som serverTimestamp på nye poster, men leses ut som millisekunder (tall),
+// slik at sortering og JSON-sikkerhetskopi er enkle. Ventende lokal skriving (null) regnes som «nå».
+// Eldre poster har ikke feltet — da blir det undefined.
+function opprettetTilMillis(verdi) {
+  if (verdi && typeof verdi.toMillis === 'function') return verdi.toMillis();
+  if (typeof verdi === 'number') return verdi;
+  if (verdi === null) return Date.now();
+  return undefined;
+}
+
 export const VinDB = {
   // Abonnerer på sanntidsoppdateringer. Returnerer en funksjon som avslutter abonnementet.
   abonner(kjellerId, callback) {
     return onSnapshot(vinerCollection(kjellerId), (snap) => {
       // id sist, så et (manipulert) "id"-felt i selve dokumentet aldri kan overstyre dokument-ID-en.
-      callback(snap.docs.map((d) => ({ ...d.data(), id: d.id })));
+      callback(snap.docs.map((d) => {
+        const data = d.data();
+        const post = { ...data, id: d.id };
+        if ('opprettet' in data) post.opprettet = opprettetTilMillis(data.opprettet);
+        return post;
+      }));
     }, (feil) => {
       console.error('Firestore-abonnement feilet:', feil);
     });
@@ -133,7 +149,13 @@ export const VinDB = {
     const erNy = !data.id;
     delete data.id;
 
-    if (erNy) data.lagtTilAv = info;
+    if (erNy) {
+      data.lagtTilAv = info;
+      data.opprettet = serverTimestamp();
+    } else {
+      // Posten i minnet har `opprettet` som tall (se abonner) — ikke skriv det tilbake over det ekte tidsstempelet.
+      delete data.opprettet;
+    }
     if (data.drukketDato && !data.drukketAv) data.drukketAv = info;
     if (!data.drukketDato) data.drukketAv = null;
 
@@ -182,7 +204,14 @@ export const VinDB = {
       const { id, ...data } = vin;
       const storrelse = 2000 + (typeof data.bilde === 'string' ? data.bilde.length : 0);
       if (iBatch >= 400 || (iBatch && bytes + storrelse > 8000000)) await commitBatch();
-      batch.set(id ? doc(kolleksjon, id) : doc(kolleksjon), { ...data, lagtTilAv: data.lagtTilAv || info });
+      // Gjenopprettet post beholder sitt opprinnelige tidspunkt (tall) og får ingen hvis den mangler
+      // det; en ny AI-importert post (uten id) får «nå».
+      const skrivData = { ...data, lagtTilAv: data.lagtTilAv || info };
+      if (typeof data.opprettet !== 'number') {
+        if (id) delete skrivData.opprettet;
+        else skrivData.opprettet = serverTimestamp();
+      }
+      batch.set(id ? doc(kolleksjon, id) : doc(kolleksjon), skrivData);
       iBatch++;
       bytes += storrelse;
       antall++;

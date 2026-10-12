@@ -72,6 +72,13 @@ produkter/{ean}                     { kategori, navn, produsent, argang, type, l
                                        lagringstemperatur, lagringsfuktighet, serveringstemperatur,
                                        drikkeklarFra, drikkeklarTil, matparKategorier, matparNotater,
                                        aiToppAr, aiBegrunnelse, aiKonfidens, drikkeklarKilde, oppdatert }
+brukere/{uid}                       { navn, epost, foto, status: 'ventende'|'godkjent'|'avvist', opprettet }
+                                       (punkt 25 — opprettes av brukeren selv, kun admin endrer status)
+faktafremdrift/{uid}                { nbShuffledFactIds, mfShuffledFactIds, currentIndex, cycleCount,
+                                       totalOpens, lastOpenedAt }  (punkt 33 — kun egen bruker skriver)
+tilbakemeldinger/{id}               { type, tekst, bilde (base64-JPEG|null), bruker: {uid, navn, epost},
+                                       side, status: 'ny'|'lest'|'løst', opprettet }
+                                       (punkt 30 — godkjente sender inn, kun admin leser/endrer/sletter)
 ```
 
 ## Alt som er bygget (kronologisk)

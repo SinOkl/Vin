@@ -5,6 +5,8 @@
 //   kjellere/{kjellerId}/viner/{vinId}   selve vin-/brennevindataen
 //   produkter/{ean}                     delt strekkode-cache (produktfakta, ikke kjeller-spesifikk)
 //   brukere/{uid}                       { navn, epost, foto, status: 'ventende'|'godkjent'|'avvist', opprettet }
+//   faktafremdrift/{uid}                fremdrift i dagens fakta per bruker (se fakta-db.js)
+//   tilbakemeldinger/{id}               brukertilbakemeldinger (se feedback-modul/feedback-db.js)
 //
 // Kjellere er kun lesbare for egne medlemmer (håndhevet i firestore.rules) — derfor
 // går "bli med via kode" via den separate invitasjoner-samlingen, som kan slås opp

@@ -42,6 +42,11 @@ for det som gjenstår.
 | `styles.css` | All visuell stil, lys/mørk modus |
 | `app.js` | All logikk: ruting, visninger, skjema, filter, kjeller-UI |
 | `db.js` | Firestore-datalag: `KjellerDB`, `VinDB` og `ProduktDB` (delt strekkode-cache) |
+| `skann.js` | Live strekkodeskanning (ZXing, CDN), kun EAN/UPC |
+| `kalkulator.js` | Kalkulator-fanen: kjøletid, dekanteringstid, flasker til fest (punkt 34) |
+| `fakta.json`, `fakta-db.js` | Dagens fakta: faktapool og fremdrift per bruker (punkt 33) |
+| `feedback-modul/` | Gjenbrukbar tilbakemeldingsmodul (punkt 30–32) |
+| `verktoy/` | Node-verktøy utenfor appen, f.eks. `tilbakemeldinger-cli.js` (punkt 32) |
 | `auth.js` | Google-innlogging/utlogging |
 | `firebase-init.js` | Kobler opp Firebase (Auth + Firestore m/offline-cache) |
 | `firebase-config.js` | Firebase-prosjektets offentlige nøkler (trygt at disse er i git) |
@@ -413,6 +418,84 @@ produkter/{ean}                     { kategori, navn, produsent, argang, type, l
       neste steg er å bekrefte at fakta-boksen faktisk dukker opp på Oversikt ved ekte
       app-åpning og at fremdriften lagres riktig i Firestore.
 
+34. **Kalkulator-fanen (`kalkulator.js`) — kom før punkt 33, men ble aldri ført opp her**:
+    egen fane i bunnavigasjonen med tre kalkulatorer på én side: kjøletid (Newtons
+    avkjølingslov med to varmemotstander, vist som intervall, med kalibreringsslider),
+    dekanteringstid (oppslagstabell per vintype) og flasker til fest. Spesifikasjonen ligger i
+    `kalkulatorer-spec.md`. Varslingen da kjøletiden var ferdig, gikk gjennom tre forsøk, og
+    ingen av dem virket (se punkt 39 og fallgruvene):
+    - en `intent:`-lenke til Android sin Klokke-app (`SET_TIMER`), som Chrome aldri slapp gjennom
+    - deretter en nedlastbar `.ics` med `VALARM`
+    - til slutt fjernet helt i punkt 39
+
+35. **Sikkerhetsfiks: XSS via bilde/id, og sikkerhetskopi som kan gjenopprettes fullt ut**
+    (v2.18.2):
+    - Bilder fra Firestore slippes bare inn i `src` når de er en ren base64-data-URL
+      (`gyldigBilde`), også på tilbakemeldingssiden.
+    - `antallFlasker` og `id` escapes, og `id` legges sist i alle spreads så et `id`-felt i
+      dokumentet ikke kan overstyre den ekte ID-en.
+    - `firestore.rules` krever at `tilbakemeldinger.bilde` er `null` eller base64-JPEG under
+      900 000 tegn.
+    - Eksporten er nå `{format, versjon, viner}`. Gjenoppretting bevarer bilde, historikk,
+      fyllnivå, AI-felt og dokument-ID, slik at den overskriver i stedet for å lage duplikater.
+    - `VinDB.importer` deler opp skrivingene etter størrelse (ca. 8 MB) og ikke bare etter
+      antall.
+    - Lokal dato brukes i stedet for UTC i filnavn og «Merk som drukket».
+
+36. **Tapte endringer og hengende lagring** (v2.18.3):
+    - Før tegnet en Firestore-snapshot hele gjeldende side på nytt. Skjema, kalkulator og
+      innstillinger ble da nullstilt hver gang et annet medlem endret noe. Nå tegnes bare
+      Oversikt, lister og detaljside på nytt.
+    - Lagre-knappen låses mens den lagrer, så et dobbelttrykk ikke lager duplikater. Den
+      venter maks 1,5 s på serveren, så skjemaet ikke henger offline.
+    - `+`/`−` flaske bruker atomisk `increment`. Fyllnivå, vurdering og «drukket» skriver bare
+      feltene som endres (`VinDB.endreAntall`/`oppdater`), ikke hele dokumentet fra en utdatert
+      kopi.
+
+37. **Strammere Firestore-regler for delte samlinger og validering av strekkoder**
+    (v2.18.4):
+    - **Regler:** `invitasjoner` krever godkjent bruker, riktig kodeformat og at brukeren eier
+      kjelleren. `produkter` krever godkjent bruker, EAN på 8–14 siffer og maks 30 felt.
+      `faktafremdrift` validerer lister og tellere.
+    - **`db.js`:** `ProduktDB` sender ikke tomme felt, fordi de overskrev gode verdier. Den
+      deler heller ikke `matparNotater`, og `hentByEan` slipper bare gjennom kjente felt.
+    - **`app.js`:** EAN renses for mellomrom og bindestreker og valideres ved skanning, manuell
+      inntasting og lagring.
+    - **`skann.js`:** hopper over strekkoder som ikke er EAN/UPC og skanner videre.
+
+38. **Vin- og brennevinsfaglig gjennomgang, og Sherry som egen type** (v2.18.5), faktasjekket
+    av agenten `vinekspert` i tre runder:
+    - **Typer:** lagrings- og serveringstemperatur er rettet for flere vintyper. Portvin og
+      dessertvin er delt etter stil, og akevitt er delt i fatlagret og klar.
+    - **Matpar:** «Hvit ost» er delt i to, og det er lagt til flere kategorier.
+    - **AI-prompten:** krever grader Celsius og ber om drikkevindu for all vin. Brennevin viser
+      «Ikke aktuelt» som drikkevindu.
+    - **`fakta.json`:** rettet faktafeil og unyanserte punkter.
+    - **`kalkulator.js`:** utvidet dekanteringstabellen, la til burgunderflaske i
+      kjøletidkalkulatoren og justerte rådet for musserende.
+
+39. **Tre tilbakemeldinger rettet: bildebeskjæring, strekkoderamme og kalendervarsel**
+    (v2.18.6):
+    - **Bildebeskjæring:** etikettbildet tok med mye mer enn rammen, fordi `registrerBildeSteg`
+      skar ut det største 3:4-utsnittet av hele kamerabildet. Rammen er bare 62 % av
+      videobredden, og videoen vises med `object-fit: cover`. Beskjæringen regnes nå ut fra
+      rammens og videoens `getBoundingClientRect`. Den tar hensyn til skaleringen og kuttet
+      fra `cover`, og holder rammens kantlinje utenfor bildet.
+    - **Strekkoderamme:** skanne-steget har fått en bred ramme (`.kamera-ramme--strekkode`,
+      80 %, 5:2) og teksten «Hold strekkoden inne i rammen». Rammen er bare veiledning, og
+      ZXing leser fortsatt hele bildet, så koden blir funnet selv om den er litt utenfor.
+    - **Mørklegging:** rammens `box-shadow: 0 0 0 999px` mørkla hele siden, også knappene.
+      `.kamera-boks` har nå `overflow: hidden`, og videoen er `display: block` uten marg, så
+      boksen er like stor som videoen og rammen står midt på den.
+    - **Kalendervarsel:** `.ics`-påminnelsen i kjøletidkalkulatoren er fjernet. Kalenderen
+      opprettet hendelsen, men ga ikke noe varsel. Den er erstattet med teksten «Sett en
+      tidtaker på telefonen på X — appen varsler deg ikke selv». En nedtelling inne i appen ble
+      valgt bort, fordi den bare varsler mens appen er åpen og er upålitelig på iPhone.
+    - **Testet:** kalkulatoren er testet i nettleseren. Oppsettet av kamerasidene er sjekket med
+      `ui-tester`, ved å legge inn sidenes markup direkte.
+    - **Ikke testet med ekte innlogging og kamera:** at det lagrede bildet matcher rammen, og at
+      strekkoder fortsatt leses med den nye rammen.
+
 ## Kjente fallgruver (lært på den harde måten — ikke gjenta)
 
 - **`<input type="file" capture="...">` hopper forbi filvelgeren og går rett til kameraet**
@@ -467,6 +550,19 @@ produkter/{ean}                     { kategori, navn, produsent, argang, type, l
   lokalt (gitignored) og lastes aldri av nettleseren/GitHub Pages. Service account-nøkkelen
   gir full tilgang til Firestore uavhengig av `firestore.rules` — den er like sensitiv som
   et passord.
+- **En nettside kan ikke stille inn en alarm på telefonen pålitelig.** Android-intentet
+  `SET_TIMER` krever at Klokke-appen er merket `BROWSABLE`, og det er den ikke. Google Kalender
+  på Android ser bort fra `VALARM` i importerte `.ics`-filer, så du får en hendelse uten
+  varsel. Varsler fra service workeren kan ikke planlegges frem i tid. Ikke lov brukeren et
+  varsel appen ikke kan garantere (punkt 34 og 39).
+- **Beskjæring av en `<video>` med `object-fit: cover` må regnes via skjermkoordinater.**
+  Kamerabildets piksler (`videoWidth`/`videoHeight`) samsvarer ikke med det som vises. Bruk
+  rammens og videoens `getBoundingClientRect`, skalaen `max(elB/vb, elH/vh)` og kuttet på hver
+  side (punkt 39).
+- **`box-shadow: 0 0 0 999px` som mørklegging krever `overflow: hidden` på forelderen.**
+  Ellers dekker skyggen hele siden, også knapper utenfor kamerafeltet (punkt 39).
+- **Snapshot-lyttere må ikke tegne skjemaer på nytt.** Når et annet medlem endrer noe og hele
+  gjeldende side tegnes på nytt, mister brukeren det som er skrevet inn (punkt 36).
 
 ## Kjente mangler / naturlige neste steg
 

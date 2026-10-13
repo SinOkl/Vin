@@ -67,7 +67,10 @@ kjellere/{kjellerId}/viner/{vinId}  { kategori, navn, produsent, argang, type, l
                                        matparKategorier, matparNotater, smaksnotater, vurdering,
                                        bilde (base64), drukketDato, lagtTilAv, drukketAv,
                                        aiToppAr, aiBegrunnelse, aiKonfidens, drikkeklarKilde,
-                                       fyllniva (0–100, kun brennevin — mangler felt = tolkes som 100) }
+                                       fyllniva (0–100, kun brennevin — mangler felt = tolkes som 100),
+                                       opprettet (serverTimestamp på nye poster; leses som ms-tall, eldre
+                                       poster mangler det — punkt 40),
+                                       onskeliste (true = på ønskelista, antallFlasker er da 0 — punkt 41) }
 produkter/{ean}                     { kategori, navn, produsent, argang, type, land, region, druer,
                                        lagringstemperatur, lagringsfuktighet, serveringstemperatur,
                                        drikkeklarFra, drikkeklarTil, matparKategorier, matparNotater,
@@ -503,7 +506,54 @@ tilbakemeldinger/{id}               { type, tekst, bilde (base64-JPEG|null), bru
     - **Ikke testet med ekte innlogging og kamera:** at det lagrede bildet matcher rammen, og at
       strekkoder fortsatt leses med den nye rammen.
 
+40. **Pris i lista og sortering** (v2.19.0), fra tilbakemelding om pris og sortering:
+    - **Pris:** `vinkortHtml()` viser pris per flaske (`innkjopspris`) på linjen med antall og land.
+      Pris 0 eller tom vises ikke.
+    - **Sortering:** nytt «Sorter»-nedtrekk i `visVinliste()` (`filterState.sortering`, `SORTERINGER`,
+      `sorterListe()`): navn A–Å (standard), pris lav↔høy (per flaske, ikke total verdi), årgang
+      eldst/nyest, drikkevindu (mest hastesak først, kun Vin) og sist lagt til. Poster uten verdi havner
+      alltid nederst, uansett retning. Nedtrekket er deaktivert i Drukket-visning, som fortsatt sorteres
+      på dato.
+    - **`opprettet`:** appen hadde ikke noe opprettet-tidspunkt (bare `innkjopsdato`, som er tom for
+      mange), så `VinDB.lagre()` setter nå `opprettet: serverTimestamp()` på nye poster. `abonner()`
+      leser det som ms-tall, og `lagre()` fjerner det fra payloaden for eksisterende poster så tallet aldri
+      skrives tilbake over tidsstempelet. `importer()` beholder tallet ved gjenoppretting og setter
+      «nå» på nye AI-importerte poster. «Sist lagt til» faller tilbake på `innkjopsdato`, og eldre
+      poster uten noen av dem havner nederst.
+    - **Regler:** ingen endring, siden `viner` ikke har feltvalidering. `regel-vakt` kjørt etter `db.js`-endringen.
+    - **Ikke testet med ekte innlogging:** sortering mot ekte kjellerdata og at `opprettet` faktisk skrives.
+
+41. **«Kopier liste til AI» og ønskeliste** (v2.20.0):
+    - **Eksport til AI:** knapp i Vin- og Brennevin-lista (kun «I kjelleren»-visning) som kopierer lista
+      slik den vises nå (filter og sortering, via `filtrertOgSortertListe()`) som ren tekst med en
+      ferdig prompt foran, og åpner `claude.ai/new` (`kopierListeTilAi`, `byggListeEksportTekst`,
+      `eksportRad`). Vin spør om hvilke viner som passer til en rett, Brennevin om hvilke drinker som kan
+      lages. Ren tekst ble valgt fremfor CSV fordi den limes rett inn i en chat på telefon. Bilde,
+      id, brukere og fritekstnotater er ikke med. Prompten er faglig gjennomgått av `vinekspert`
+      (matchen veier tyngst og drikkevinduet er tiebreak, regler for «ikke klar» og «på hell»,
+      cocktailbitter, vermut/sherry, edle flasker nytes rene). Ved nektet utklippstavle vises teksten i
+      et felt til manuell kopiering.
+    - **Ønskeliste uten ny samling:** et ønske er en vanlig `viner`-post med `onskeliste: true` og
+      `antallFlasker: 0`. Tredje visning «🛒 Ønsker» i Vin og Brennevin, «+ Legg til ønske» (rute
+      `#/onske/vin|brennevin`), avkrysning «På ønskelista» i skjemaet og «Kjøpt — flytt til kjelleren» på
+      detaljsiden. Ønsker filtreres bort fra Oversikt-tall, estimert verdi, varsler, «klare til
+      drikking» og «nylig aktivitet». Oversikt har lenken «N på ønskelista». Skanning av strekkode som
+      står på ønskelista tilbyr å flytte den til kjelleren. Sikkerhetskopi bevarer `onskeliste`.
+    - **Regler:** ingen endring (`viner` har ingen feltvalidering), og `db.js` er uendret i denne runden.
+    - **Rettet etter `ui-tester`:** knappetekst som brøt linjen på 375 px, og et nytt ønske der
+      avkrysningen ble fjernet ble en 0-flaske-post i kjelleren.
+    - **Ikke testet med ekte innlogging:** hele ønskelisteflyten, at ønsker ikke teller i Oversikt,
+      utklippstavle og `window.open` på telefon, og eksport/gjenoppretting av sikkerhetskopi med ønsker.
+
 ## Kjente fallgruver (lært på den harde måten — ikke gjenta)
+
+- **Ønsker er vanlige `viner`-poster, så hvert sted som lister eller teller kjelleren må ekskludere
+  `onskeliste`.** Flasketall og verdi blir riktig av seg selv (antall 0), men `liste.length`,
+  varsler, «klare til drikking», «nylig aktivitet», kjeller-visning og EAN-dublettsjekk gjør det ikke
+  (punkt 41). Nye steder som filtrerer på `!v.drukketDato` må også sjekke `!v.onskeliste`.
+- **`opprettet` er et tall i minnet men et Firestore-tidsstempel i databasen.** Skriv aldri en post
+  fra minnet tilbake med `opprettet` (`VinDB.lagre` fjerner det), og la ventende lokale skrivinger
+  (`null`) tolkes som «nå» (punkt 40).
 
 - **`<input type="file" capture="...">` hopper forbi filvelgeren og går rett til kameraet**
   på mobil — fjern `capture`-attributtet helt hvis brukeren skal kunne velge mellom kamera

@@ -390,6 +390,7 @@ textarea { min-height: 70px; resize: vertical; }
 .vinkort-pris { font-weight: 600; color: var(--tekst); white-space: nowrap; }
 .argang { color: var(--gull); font-weight: 600; }
 #sortering { width: 100%; margin-top: 6px; }
+.eksport-fallback { width: 100%; margin-top: 8px; font-size: 0.85rem; }
 
 .fyllniva-bar-liten {
   width: 100%;
@@ -439,13 +440,14 @@ textarea { min-height: 70px; resize: vertical; }
 
 .visning-knapp {
   flex: 1;
-  padding: 11px 10px;
+  padding: 11px 4px;
+  min-width: 0;
   border-radius: 10px;
   border: 1px solid var(--grense);
   background: var(--kort-bg);
   color: var(--tekst-lys);
   font-family: inherit;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
 }

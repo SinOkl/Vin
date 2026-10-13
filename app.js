@@ -505,6 +505,7 @@ function normaliserBackupVin(raw) {
   vin.aiBegrunnelse = tekstEllerTom(raw.aiBegrunnelse);
   vin.aiKonfidens = tekstEllerTom(raw.aiKonfidens);
   vin.drikkeklarKilde = raw.drikkeklarKilde === 'ai' ? 'ai' : '';
+  vin.onskeliste = raw.onskeliste === true && !vin.drukketDato;
   const opprettet = tallEllerTom(raw.opprettet);
   if (Number.isFinite(opprettet) && opprettet > 0) vin.opprettet = opprettet;
   const id = idTilBackup(raw.id);
@@ -667,6 +668,9 @@ function ruteIndre() {
   } else if (path === 'ny') {
     settAktivNav(param === 'brennevin' ? '#/brennevin' : '#/viner');
     visSkjema(null, param === 'brennevin' ? 'Brennevin' : 'Vin');
+  } else if (path === 'onske') {
+    settAktivNav(param === 'brennevin' ? '#/brennevin' : '#/viner');
+    visSkjema(null, param === 'brennevin' ? 'Brennevin' : 'Vin', true);
   } else if (path === 'rediger' && param) {
     const post = alleViner.find((x) => x.id === param);
     settAktivNav(post && post.kategori === 'Brennevin' ? '#/brennevin' : '#/viner');
@@ -1028,6 +1032,7 @@ function relativDato(iso) {
 function nyligAktivitet(alle, antall) {
   const hendelser = [];
   for (const v of alle) {
+    if (v.onskeliste) continue; // ønsker er ikke kjøpt ennå
     if (v.drukketDato) hendelser.push({ v, verb: 'Drukket', dato: v.drukketDato });
     else if (v.innkjopsdato) hendelser.push({ v, verb: 'Lagt til', dato: v.innkjopsdato });
   }
@@ -1036,7 +1041,9 @@ function nyligAktivitet(alle, antall) {
 }
 
 function visOversikt() {
-  const iKjelleren = alleViner.filter((v) => !v.drukketDato);
+  // Ønsker (onskeliste: true) hører ikke hjemme i tall, varsler eller «klare til drikking».
+  const iKjelleren = alleViner.filter((v) => !v.drukketDato && !v.onskeliste);
+  const antallOnsker = alleViner.filter((v) => v.onskeliste && !v.drukketDato).length;
   const drukket = alleViner.filter((v) => v.drukketDato);
   const vinIKjelleren = iKjelleren.filter((v) => (v.kategori || 'Vin') === 'Vin');
   const brennevinIKjelleren = iKjelleren.filter((v) => v.kategori === 'Brennevin');
@@ -1112,9 +1119,13 @@ function visOversikt() {
 
       ${unikeProdukter === 0 ? `<p class="tom">Kjelleren er tom. Trykk «Legg til flaske» for å registrere den første vinen eller flasken brennevin.</p>` : ''}
 
+      ${antallOnsker ? `<p class="hjelpetekst"><a href="${alleViner.some((v) => v.onskeliste && !v.drukketDato && (v.kategori || 'Vin') === 'Vin') ? '#/viner' : '#/brennevin'}" id="onskeliste-lenke">🛒 ${antallOnsker} på ønskelista →</a></p>` : ''}
       ${drukket.length ? `<p class="hjelpetekst"><a href="#/viner">${drukket.length} i drikkehistorikken →</a></p>` : ''}
     </div>
   `));
+
+  // Klikket kommer før hashchange, så lista åpnes rett på ønskelista-visningen.
+  document.getElementById('onskeliste-lenke')?.addEventListener('click', () => { filterState.visning = 'onskeliste'; });
 }
 
 function listeKompakt(viner) {
@@ -1201,7 +1212,8 @@ function visVinliste(kategori) {
     filterState.kategori = kategori;
   }
   const erBrennevin = filterState.kategori === 'Brennevin';
-  const iKjellerenKategori = alleViner.filter((v) => (v.kategori || 'Vin') === filterState.kategori && !v.drukketDato);
+  const iKjellerenKategori = alleViner.filter((v) => (v.kategori || 'Vin') === filterState.kategori && !v.drukketDato && !v.onskeliste);
+  const antallOnskerKategori = alleViner.filter((v) => (v.kategori || 'Vin') === filterState.kategori && v.onskeliste && !v.drukketDato).length;
   const { totalFlasker: flaskerKategori, totalVerdi: verdiKategori } = beregnStats(iKjellerenKategori);
 
   app.innerHTML = '';
@@ -1211,8 +1223,14 @@ function visVinliste(kategori) {
       ${filterState.visning === 'kjeller' && iKjellerenKategori.length ? `<p class="hjelpetekst">${flaskerKategori} flaske(r) · estimert verdi ${formatKr(verdiKategori) || '–'}</p>` : ''}
       <div class="visning-bytter">
         <button type="button" class="visning-knapp ${filterState.visning === 'kjeller' ? 'aktiv' : ''}" id="knapp-kjeller">${erBrennevin ? '🥃' : '🍷'} I kjelleren</button>
+        <button type="button" class="visning-knapp ${filterState.visning === 'onskeliste' ? 'aktiv' : ''}" id="knapp-onskeliste">🛒 Ønsker${antallOnskerKategori ? ` (${antallOnskerKategori})` : ''}</button>
         <button type="button" class="visning-knapp ${filterState.visning === 'drukket' ? 'aktiv' : ''}" id="knapp-drukket">🍾 Drukket</button>
       </div>
+      ${filterState.visning === 'onskeliste' ? `
+      <div class="knapperad">
+        <a class="knapp knapp-primaer" href="#/onske/${erBrennevin ? 'brennevin' : 'vin'}">+ Legg til ønske</a>
+      </div>
+      <p class="hjelpetekst">Ting du vil kjøpe eller prøve. De telles ikke med i flasketall, verdi eller varsler.</p>` : ''}
       <div class="filterrad">
         <input type="search" id="sok" placeholder="Søk navn, produsent, druer..." value="${escapeHtml(filterState.sok)}">
         <div class="filterrad2">
@@ -1224,7 +1242,7 @@ function visVinliste(kategori) {
             <option value="">Alle matpar</option>
             ${MATPAR_KATEGORIER.map((m) => `<option value="${m}" ${filterState.matpar === m ? 'selected' : ''}>${m}</option>`).join('')}
           </select>
-          <select id="filter-status" ${filterState.visning === 'drukket' ? 'disabled' : ''}>
+          <select id="filter-status" ${filterState.visning !== 'kjeller' ? 'disabled' : ''}>
             <option value="">Alle statuser</option>
             <option value="status-klar" ${filterState.status === 'status-klar' ? 'selected' : ''}>Klar til drikking</option>
             <option value="status-snart" ${filterState.status === 'status-snart' ? 'selected' : ''}>Drikk snart</option>
@@ -1236,6 +1254,12 @@ function visVinliste(kategori) {
           ${sorteringerForKategori(filterState.kategori).map((s) => `<option value="${s.id}" ${filterState.sortering === s.id ? 'selected' : ''}>Sorter: ${s.label}</option>`).join('')}
         </select>
       </div>
+      ${filterState.visning === 'kjeller' ? `
+      <div class="knapperad eksport-rad">
+        <button type="button" class="knapp" id="eksport-ai-knapp">📋 ${erBrennevin ? 'Kopier liste og spør AI om drinker' : 'Kopier liste og spør AI om matpar'}</button>
+      </div>
+      <p class="hjelpetekst" id="eksport-status">Kopierer lista slik den vises nå (med filter og sortering) og åpner Claude. Lim inn, og skriv ${erBrennevin ? 'hva du er i humør for' : 'hvilken rett du skal ha'} nederst.</p>
+      <div id="eksport-fallback"></div>` : ''}
       <div id="vinliste-resultat"></div>
     </div>
   `);
@@ -1246,7 +1270,9 @@ function visVinliste(kategori) {
   document.getElementById('filter-matpar').addEventListener('change', (e) => { filterState.matpar = e.target.value; renderVinlisteResultat(); });
   document.getElementById('filter-status').addEventListener('change', (e) => { filterState.status = e.target.value; renderVinlisteResultat(); });
   document.getElementById('sortering').addEventListener('change', (e) => { filterState.sortering = e.target.value; renderVinlisteResultat(); });
+  document.getElementById('eksport-ai-knapp')?.addEventListener('click', kopierListeTilAi);
   document.getElementById('knapp-kjeller').addEventListener('click', () => bytVisning('kjeller'));
+  document.getElementById('knapp-onskeliste').addEventListener('click', () => bytVisning('onskeliste'));
   document.getElementById('knapp-drukket').addEventListener('click', () => bytVisning('drukket'));
 
   renderVinlisteResultat();
@@ -1257,12 +1283,18 @@ function bytVisning(visning) {
   visVinliste();
 }
 
-function renderVinlisteResultat() {
-  const resultat = document.getElementById('vinliste-resultat');
+// Lista slik den vises nå (filter + sortering). Brukes både av visningen og av «Kopier liste til AI».
+function filtrertOgSortertListe() {
   const sok = filterState.sok.trim().toLowerCase();
-  let filtrert = alleViner.filter((v) => {
+  const filtrert = alleViner.filter((v) => {
     if ((v.kategori || 'Vin') !== filterState.kategori) return false;
-    if (filterState.visning === 'drukket' ? !v.drukketDato : !!v.drukketDato) return false;
+    if (filterState.visning === 'drukket') {
+      if (!v.drukketDato) return false;
+    } else if (v.drukketDato) {
+      return false;
+    } else if (filterState.visning === 'onskeliste' ? !v.onskeliste : !!v.onskeliste) {
+      return false;
+    }
     if (filterState.type && v.type !== filterState.type) return false;
     if (filterState.matpar && !(v.matparKategorier || []).includes(filterState.matpar)) return false;
     if (filterState.visning === 'kjeller' && filterState.status && drikkestatus(v).klasse !== filterState.status) return false;
@@ -1278,20 +1310,122 @@ function renderVinlisteResultat() {
   } else {
     sorterListe(filtrert, filterState.sortering);
   }
+  return filtrert;
+}
+
+function renderVinlisteResultat() {
+  const resultat = document.getElementById('vinliste-resultat');
+  const filtrert = filtrertOgSortertListe();
+  const eksportKnapp = document.getElementById('eksport-ai-knapp');
+  if (eksportKnapp) eksportKnapp.disabled = filterState.visning !== 'kjeller' || !filtrert.length;
 
   if (!filtrert.length) {
-    resultat.innerHTML = `<p class="tom">${filterState.visning === 'drukket' ? 'Ingen i drikkehistorikken ennå.' : 'Ingen treffer filteret.'}</p>`;
+    const tomTekst = filterState.visning === 'drukket'
+      ? 'Ingen i drikkehistorikken ennå.'
+      : filterState.visning === 'onskeliste' && !filterState.sok && !filterState.type && !filterState.matpar
+        ? 'Ønskelista er tom. Trykk «+ Legg til ønske» for å legge til noe du vil kjøpe eller prøve.'
+        : 'Ingen treffer filteret.';
+    resultat.innerHTML = `<p class="tom">${tomTekst}</p>`;
     return;
   }
 
   resultat.innerHTML = `<div class="vinkort-liste">${filtrert.map(vinkortHtml).join('')}</div>`;
 }
 
+// ---------- Eksport av lista til en AI-chat ----------
+// Ren tekst (ikke CSV): lett å lime rett inn i en chat på telefon, og AI-en leser den uten opplasting.
+// Ikke med: bilde, id, brukere og fritekstnotater — holder teksten kort og unngår personlige detaljer.
+
+function eksportRad(v, erBrennevin) {
+  const ren = (t) => String(t ?? '').replace(/[\r\n|]+/g, ' ').trim();
+  const deler = [ren(v.navn) + (v.argang ? ` ${ren(v.argang)}` : '')];
+  if (v.type) deler.push(ren(v.type));
+  const sted = [v.land, v.region].map(ren).filter(Boolean).join(', ');
+  if (sted) deler.push(sted);
+  if (v.druer) deler.push(ren(v.druer));
+  deler.push(`${Number(v.antallFlasker) || 0} fl`);
+  if (Number(v.innkjopspris) > 0) deler.push(`${Math.round(Number(v.innkjopspris))} kr/fl`);
+  if (erBrennevin) {
+    const fyll = hentFyllniva(v);
+    if (fyll < 100) deler.push(`fyllnivå ${fyll} %`);
+  } else {
+    const fra = Number(v.drikkeklarFra) || null;
+    const til = Number(v.drikkeklarTil) || null;
+    const vindu = fra && til ? `${fra}–${til}` : fra ? `fra ${fra}` : til ? `til ${til}` : '';
+    deler.push(`drikkevindu: ${vindu ? vindu + ' — ' : ''}${drikkestatus(v).label}`);
+  }
+  const matpar = erBrennevin ? [] : (v.matparKategorier || []).map(ren).filter(Boolean);
+  if (matpar.length) deler.push(`passer til: ${matpar.join(', ')}`);
+  if (Number(v.vurdering) > 0) deler.push(`min vurdering ${Number(v.vurdering)}/5`);
+  return `- ${deler.join(' | ')}`;
+}
+
+function byggListeEksportTekst(viner, kategori) {
+  const rader = viner.map((v) => eksportRad(v, kategori === 'Brennevin')).join('\n');
+  if (kategori === 'Brennevin') {
+    return `Under er brennevinet jeg har hjemme. Hvilke drinker og cocktails kan jeg lage med dette?
+
+Regler:
+- Foreslå drinker som kan lages med flaskene i lista, og si hvilken flaske hver drink bruker. Ta med oppskrift med mengder i cl.
+- Du kan forutsette vanlige tilbehør (is, sitrus, sukker/sukkerlake, soda/tonic, cocktailbitter som Angostura). Si fra hvis noe annet må kjøpes.
+- Vermut, sherry, portvin og lignende ligger ikke i denne lista. Hvis en drink trenger dem, si tydelig fra at jeg må ha det i tillegg.
+- Flaskestørrelse er ikke oppgitt; anta 70 cl. Der fyllnivå er oppgitt, si omtrent hvor mange drinker som er mulig, og ikke bruk nesten tomme flasker til flere drinker.
+- Dyre eller lagrede flasker (f.eks. single malt, XO-cognac, eldre rom) bør helst nytes rene eller i enkle drinker som fremhever spriten, ikke i drinker med mye juice.
+- Ikke finn på flasker som ikke står i lista.
+
+Brennevin (${viner.length} produkt(er)):
+${rader}
+
+Hva jeg er i humør for (valgfritt): `;
+  }
+  return `Under er vinene jeg har i kjelleren. Hvilke passer best til retten eller anledningen jeg skriver nederst?
+
+Regler:
+- Foreslå 1–3 viner fra lista og begrunn kort hvorfor de passer til retten. Oppgi serveringstemperatur og om vinen bør luftes eller dekanteres.
+- Velg først etter hva som passer til retten. Blant like gode valg, foretrekk de som bør drikkes snart.
+- Viner som er «Ikke klar før …» skal ikke foreslås, eller bare med en tydelig advarsel om at de er for unge. For «På hell» må du si fra at vinen kan ha passert toppen.
+- Ved «Ukjent vindu»: bruk din egen faglige vurdering ut fra type, region og årgang, og si fra hvis du er usikker.
+- «Min vurdering» er min egen smak, ikke et mål på kvalitet.
+- Ikke finn på viner som ikke står i lista. Si fra hvis ingenting passer særlig godt.
+
+Viner (${viner.length} produkt(er)):
+${rader}
+
+Rett / anledning / antall personer: `;
+}
+
+function kopierListeTilAi() {
+  const liste = filtrertOgSortertListe();
+  if (!liste.length) return;
+  const tekst = byggListeEksportTekst(liste, filterState.kategori);
+  const status = document.getElementById('eksport-status');
+  const fallback = document.getElementById('eksport-fallback');
+  // window.open og clipboard må kalles synkront i klikk-handleren (teksten er bygget, ingen await før).
+  window.open('https://claude.ai/new', '_blank', 'noopener');
+  navigator.clipboard.writeText(tekst)
+    .then(() => {
+      if (status) status.textContent = `Lista (${liste.length}) er kopiert. Lim den inn i Claude og fyll ut nederste linje.`;
+      if (fallback) fallback.innerHTML = '';
+    })
+    .catch(() => {
+      if (status) status.textContent = 'Fikk ikke tilgang til utklippstavlen. Merk teksten under, kopier den manuelt og lim den inn i Claude.';
+      if (!fallback) return;
+      fallback.innerHTML = '<textarea class="eksport-fallback" readonly rows="8"></textarea>';
+      const felt = fallback.querySelector('textarea');
+      felt.value = tekst;
+      felt.focus();
+      felt.select();
+    });
+}
+
 function vinkortHtml(v) {
   const status = drikkestatus(v);
+  const erOnske = !!v.onskeliste && !v.drukketDato;
   const badge = v.drukketDato
     ? `<span class="status-badge status-drukket">Drukket ${escapeHtml(v.drukketDato)}</span>`
-    : `<span class="status-badge ${status.klasse}">${status.label}</span>`;
+    : erOnske
+      ? `<span class="status-badge status-ukjent">🛒 På ønskelista</span>`
+      : `<span class="status-badge ${status.klasse}">${status.label}</span>`;
   const fyllniva = hentFyllniva(v);
   const visFyllniva = v.kategori === 'Brennevin' && !v.drukketDato && fyllniva < 100;
   const bilde = gyldigBilde(v.bilde);
@@ -1302,7 +1436,11 @@ function vinkortHtml(v) {
       <div class="vinkort-info">
         <div class="vinkort-navn">${escapeHtml(v.navn)}${v.argang ? ` <span class="argang">${escapeHtml(v.argang)}</span>` : ''}</div>
         <div class="vinkort-detalj">${escapeHtml(v.produsent || '')}${v.type ? ' · ' + escapeHtml(v.type) : ''}</div>
-        <div class="vinkort-detalj">${Number(v.antallFlasker) || 0} flaske(r)${v.land ? ' · ' + escapeHtml(v.land) : ''}${pris ? ` · <span class="vinkort-pris">${formatKr(pris)}</span>` : ''}</div>
+        <div class="vinkort-detalj">${[
+          erOnske ? '' : `${Number(v.antallFlasker) || 0} flaske(r)`,
+          v.land ? escapeHtml(v.land) : '',
+          pris ? `<span class="vinkort-pris">${formatKr(pris)}</span>` : '',
+        ].filter(Boolean).join(' · ')}</div>
         ${visFyllniva ? `<div class="fyllniva-bar-liten" title="${fyllniva}% igjen"><div class="fyllniva-bar-indre" style="width:${fyllniva}%"></div></div>` : ''}
         ${badge}
       </div>
@@ -1325,6 +1463,7 @@ function visDetalj(id) {
   const forslagNotat = erBrennevin && fyllnivaForNotat < 33
     ? `${forslag.notat} NB: flasken er under en tredjedel full — da går oksidasjonen raskere, så smaken kan endre seg i løpet av måneder selv om den «holder svært lenge» ved høyere fyllnivå.`
     : forslag.notat;
+  const erOnske = !!v.onskeliste && !v.drukketDato;
   const verdiTotal = vinVerdi(v);
   const fyllnivaForVerdi = hentFyllniva(v);
   const verdiForklaring = erBrennevin && fyllnivaForVerdi < 100 && (Number(v.antallFlasker) || 0) > 0
@@ -1341,11 +1480,15 @@ function visDetalj(id) {
       <h1>${ikon} ${escapeHtml(v.navn)}${v.argang ? ` <span class="argang">${escapeHtml(v.argang)}</span>` : ''}</h1>
       ${v.drukketDato
         ? `<span class="status-badge status-drukket">🍾 Drukket ${escapeHtml(v.drukketDato)}${v.drukketAv ? ' av ' + escapeHtml(v.drukketAv.navn) : ''}</span>`
-        : `<span class="status-badge ${status.klasse}">${status.label}</span>`}
+        : erOnske
+          ? `<span class="status-badge status-ukjent">🛒 På ønskelista</span>`
+          : `<span class="status-badge ${status.klasse}">${status.label}</span>`}
 
       <div class="knapperad">
         ${v.drukketDato
           ? `<button class="knapp" id="angre-drukket-knapp">Legg tilbake i kjelleren</button>`
+          : erOnske
+          ? `<button class="knapp knapp-primaer" id="kjopt-knapp">🛒 Kjøpt — flytt til kjelleren</button>`
           : `
             <button class="knapp" id="legg-til-flaske-knapp">+ Legg til flaske</button>
             ${(Number(v.antallFlasker) || 0) > 1
@@ -1358,7 +1501,7 @@ function visDetalj(id) {
         <input type="range" min="0" max="5" step="1" id="vurdering-slider" value="${v.vurdering || 0}">
       </div>
 
-      ${erBrennevin && !v.drukketDato ? `
+      ${erBrennevin && !v.drukketDato && !erOnske ? `
       <section class="detaljseksjon">
         <h2>🧪 Fyllnivå</h2>
         <div class="fyllniva-rad">
@@ -1377,10 +1520,10 @@ function visDetalj(id) {
           ${dRad('Type', v.type)}
           ${dRad('Land / region', [v.land, v.region].filter(Boolean).join(' – '))}
           ${dRad('Druer', v.druer)}
-          ${dRad('Antall flasker', v.antallFlasker)}
+          ${erOnske ? '' : dRad('Antall flasker', v.antallFlasker)}
           ${dRad('Volum', v.volumCl ? v.volumCl + ' cl' : '')}
           ${dRad('Pris per flaske', formatKr(v.innkjopspris))}
-          ${dRad('Verdi totalt', verdiTotal ? `${formatKr(verdiTotal)}  (${verdiForklaring})` : '')}
+          ${erOnske ? '' : dRad('Verdi totalt', verdiTotal ? `${formatKr(verdiTotal)}  (${verdiForklaring})` : '')}
           ${dRad('Kjøpt hos', v.kjoptHos)}
           ${dRad('Innkjøpsdato', v.innkjopsdato)}
           ${dRad('Strekkode (EAN)', v.ean)}
@@ -1462,6 +1605,13 @@ function visDetalj(id) {
     });
   }
 
+  const kjoptKnapp = document.getElementById('kjopt-knapp');
+  if (kjoptKnapp) {
+    kjoptKnapp.addEventListener('click', () => {
+      meldFeilVedAvvist(VinDB.oppdater(aktivKjeller.id, v.id, { onskeliste: false, antallFlasker: 1, innkjopsdato: v.innkjopsdato || lokalDatoIso() }));
+    });
+  }
+
   const drukketKnapp = document.getElementById('drukket-knapp');
   if (drukketKnapp) {
     drukketKnapp.addEventListener('click', () => {
@@ -1477,7 +1627,7 @@ function visDetalj(id) {
   }
 
   document.getElementById('slett-knapp').addEventListener('click', () => {
-    if (!confirm(`Slette «${v.navn}» fra kjelleren?`)) return;
+    if (!confirm(`Slette «${v.navn}» fra ${erOnske ? 'ønskelista' : 'kjelleren'}?`)) return;
     meldFeilVedAvvist(VinDB.slett(aktivKjeller.id, v.id), 'slette');
     location.hash = tilbakeHref; // ikke vent på serveren — offline ville siden blitt stående
   });
@@ -1571,7 +1721,17 @@ async function handterRegistrertEan(ean, bildeData) {
     alert('Strekkoden må være 8–14 siffer. Sjekk at du skrev riktig.');
     return;
   }
-  const funnet = alleViner.find((v) => v.ean === ean && !v.drukketDato);
+  // En ekte flaske i kjelleren går foran et ønske med samme strekkode.
+  const medEan = alleViner.filter((v) => v.ean === ean && !v.drukketDato);
+  const funnet = medEan.find((v) => !v.onskeliste) || medEan[0];
+  if (funnet && funnet.onskeliste) {
+    // Står på ønskelista: ikke «finnes allerede», men tilby å flytte den til kjelleren.
+    if (confirm(`«${funnet.navn}» står på ønskelista. Flytte den til kjelleren (1 flaske)?`)) {
+      meldFeilVedAvvist(VinDB.oppdater(aktivKjeller.id, funnet.id, { onskeliste: false, antallFlasker: 1, innkjopsdato: lokalDatoIso() }));
+    }
+    location.hash = `#/vin/${funnet.id}`;
+    return;
+  }
   if (funnet) {
     alert(`«${funnet.navn}» finnes allerede i kjelleren. Bruk «+ Legg til flaske» på vinen for å øke antallet.`);
     location.hash = `#/vin/${funnet.id}`;
@@ -1742,7 +1902,7 @@ function registrerSkannSteg(forhandsvalgtKategori, bildeData) {
 
 // ---------- Visning: Skjema (legg til / rediger) ----------
 
-function visSkjema(id, forhandsvalgtKategori) {
+function visSkjema(id, forhandsvalgtKategori, somOnske = false) {
   const skannData = ventendeSkannData;
   ventendeSkannData = null;
   const eksisterende = id ? alleViner.find((x) => x.id === id) : null;
@@ -1756,7 +1916,8 @@ function visSkjema(id, forhandsvalgtKategori) {
   const v = eksisterende || {
     kategori: kategoriStart,
     navn: '', produsent: '', argang: '', type: TYPER[kategoriStart][0], land: '', region: '', druer: '',
-    antallFlasker: 1, volumCl: 75, innkjopspris: '', innkjopsdato: '', kjoptHos: '',
+    onskeliste: !!somOnske,
+    antallFlasker: somOnske ? 0 : 1, volumCl: 75, innkjopspris: '', innkjopsdato: '', kjoptHos: '',
     lagringssted: '', lagringstemperatur: '', lagringsfuktighet: '', serveringstemperatur: '',
     drikkeklarFra: '', drikkeklarTil: '', matparKategorier: [], matparNotater: '',
     smaksnotater: '', vurdering: '', bilde: '', drukketDato: '',
@@ -1779,6 +1940,11 @@ function visSkjema(id, forhandsvalgtKategori) {
         <button type="button" class="visning-knapp ${vKategori === 'Vin' ? 'aktiv' : ''}" id="knapp-kat-vin">🍷 Vin</button>
         <button type="button" class="visning-knapp ${vKategori === 'Brennevin' ? 'aktiv' : ''}" id="knapp-kat-brennevin">🥃 Brennevin</button>
       </div>
+
+      <label class="checkbox-label onske-valg">
+        <input type="checkbox" name="onskeliste" form="vinskjema" id="onskeliste-felt" ${v.onskeliste && !v.drukketDato ? 'checked' : ''}>
+        🛒 På ønskelista — ikke kjøpt ennå (antall flasker settes til 0)
+      </label>
 
       <label>Bilde av etikett (kamera eller fra galleriet)
         <input type="file" accept="image/*" id="bilde-input">
@@ -2032,7 +2198,12 @@ function visSkjema(id, forhandsvalgtKategori) {
         land: fd.get('land').trim(),
         region: fd.get('region').trim(),
         druer: fd.get('druer').trim(),
-        antallFlasker: Number(fd.get('antallFlasker')) || 0,
+        // Ønske: 0 flasker og onskeliste-flagg. Krysses det av igjen på et ønske som ikke har antall,
+        // blir det en vanlig post med 1 flaske.
+        onskeliste: !!fd.get('onskeliste'),
+        antallFlasker: fd.get('onskeliste')
+          ? 0
+          : (Number(fd.get('antallFlasker')) || (v.onskeliste ? 1 : 0)), // v.onskeliste gjelder også nye ønsker
         volumCl: Number(fd.get('volumCl')) || 0,
         fyllniva: kategoriValgt === 'Brennevin' ? Number(fd.get('fyllniva')) : '',
         innkjopspris: fd.get('innkjopspris') ? Number(fd.get('innkjopspris')) : '',
